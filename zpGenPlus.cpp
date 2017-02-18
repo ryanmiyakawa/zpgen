@@ -11,6 +11,7 @@
 #include <fstream>
 #include <cmath>
 #include <ctime>
+#include <string.h>
 
 using namespace std;
 
@@ -230,6 +231,29 @@ double secantSolve(double dRGuess, double th, double N, double p, double q, doub
     return x1;
 }
 
+
+// Computes dose ratio from zone width bias
+double getDoseFromBias(double dr, double bias){
+    return dr/(dr - bias);
+}
+
+// Computes requisite clock speed to perform dose bias
+long getPolyClockSpeed(double dR1, double dRN, double dRn, double bias){
+    double maxClockSpeed = (dRN - bias)/dRN;
+    double minClockSpeed = (dR1 - bias)/dR1;
+    double thisClockSpeed = (dRn - bias)/dRn;
+    
+    return (long) ((maxClockSpeed - thisClockSpeed)/(maxClockSpeed - minClockSpeed) * 65535);
+}
+
+void writeSupportTxtHeader(double dR1, double dRN, double bias, FILE * supportTextFile){
+    fprintf(supportTextFile, "Dose %f %f\n", getDoseFromBias(dRN, bias), getDoseFromBias(dR1, bias));
+}
+
+void writeSupportTxtZoneDose(double dR1, double dRN, double dRn, double bias, int n, double Rn,  FILE * supportTextFile){
+    fprintf(supportTextFile, "Zone %d %ld %f\n", n, getPolyClockSpeed(dR1, dRN, dRn, bias), Rn);
+}
+
 void initGDS(FILE * outputFile, unsigned char * gdsPost, unsigned char* polyPre, unsigned char * polyPost, unsigned char * polyForm){
     int gdspreamble[102] = { 0, 6, 0, 2, 0, 7, 0, 28, 1, 2, 230, 43, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0,
         230, 43, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 10, 2, 6, 110, 111, 110, 97,
@@ -396,9 +420,10 @@ int main(int argc, char** argv)
     // BEGIN NEW ZP CODE:
     
     FILE * outputFile;
+    FILE * supportTextFile = NULL;
     double dbscale = 10000; // db unit to microns
-    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy,
-                                startAngle, currentAngle, arcStart, phase, RCM, tR1, tR2;
+    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1,
+                                startAngle, currentAngle, arcStart, phase, RCM, tR1, tR2, f, pNA, RN, rN, RNp1, dRN;
     unsigned char gdsPost[8];
     unsigned char polyPre[16];
     unsigned char polyPost[4];
@@ -415,6 +440,9 @@ int main(int argc, char** argv)
             break;
         case 2://GDS + txt
             initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm);
+            if ((supportTextFile = fopen(strcat(fileName, ".txt"), "wb")) == NULL)
+                printf("Cannot open file.\n");
+            
             break;
             
             break;
@@ -424,14 +452,23 @@ int main(int argc, char** argv)
     }
     
     /* Figure out number of zones by counting the number of waves that separate rN and f */
-    double f = 1/(1/p + 1/q);
-    double pNA = NA + sin(CRA);
-    double RN = p * tan(asin(pNA));    // R in plane of ZP
-    double rN = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and f
+    f = 1/(1/p + 1/q);
+    pNA = NA + sin(CRA);
+    RN = p * tan(asin(pNA));    // R in plane of ZP
+    rN = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and f
     
     //Compute number of zones in this zone plate using RN PLD
     int N = (int)(2*(rN - p)/lambda);
 
+    //Compute dRN and dR1 to bound dose information
+    RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta);
+    RNp1        = secantSolve(sqrt((N+1)*lambda*f), 0, N + 1, p, q, 0, lambda, beta);
+    dRN         = RNp1 - RN;
+    R1          = secantSolve(sqrt(lambda*f), 0, 1, p, q, 0, lambda, beta);
+    R2          = secantSolve(sqrt(2*lambda*f), 0, 2, p, q, 0, lambda, beta);
+    dR1         = R2 - R1;
+    if (File_format == 2) writeSupportTxtHeader(dR1, dRN, bias_um, supportTextFile);
+    
     for (int n = 1; n <= N; n++){
         //Compute initial R at an arbitrary angle.  This will seed information regarding RoC for zone tol:
         rGuess     = sqrt(n*lambda*f);
@@ -439,6 +476,9 @@ int main(int argc, char** argv)
         Rn         = secantSolve(rGuess, 0, n, p, q, 0, lambda, beta);
         Rnp1       = secantSolve(rGuessp1, 0, n + 1, p, q, 0, lambda, beta);
         dr         = Rnp1 - Rn;
+        
+        // Write to support text file
+        if (File_format == 2) writeSupportTxtZoneDose(dR1, dRN, dr, bias_um, n, Rn, supportTextFile);
     
     //If buttresses are specified, condition segment width on zone parity
         buttressWidth = 0;
@@ -580,8 +620,8 @@ int main(int argc, char** argv)
             renderGDS(outputFile, gdsPost);
             break;
         case 2: // GDS + txt
-            
-            
+            renderGDS(outputFile, gdsPost);
+            fclose(supportTextFile);
             break;
         case 3: // WRV
             

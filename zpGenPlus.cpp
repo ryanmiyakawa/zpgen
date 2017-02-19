@@ -60,6 +60,8 @@ double zgenpt(int j, double r, double th) {
     for (int k = 0; k <= p; k += 1) {
         if (k % 2 == 1)
             kParity = -1;
+        else
+            kParity = 1;
         
         Rv += kParity*nChooseK((double)(n - k), (double)k)
         *nChooseK((double)(n - 2 * k), (double)(p - k))
@@ -424,21 +426,25 @@ int main(int argc, char** argv)
     double dbscale = 10000; // db unit to microns
     double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1,
                                 startAngle, currentAngle, arcStart, phase, RCM, tR1, tR2, f, pNA, RN, rN, RNp1, dRN;
+    long totalPoly = 0;
     unsigned char gdsPost[8];
     unsigned char polyPre[16];
     unsigned char polyPost[4];
     unsigned char polyForm[4];
-    if ((outputFile = fopen(fileName, "wb")) == NULL)
-        printf("Cannot open file.\n");
+    
 
     switch (File_format){
         case 0: // arc
             
             break;
         case 1: // GDS
+            if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
+                printf("Cannot open file.\n");
             initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm);
             break;
         case 2://GDS + txt
+            if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
+                printf("Cannot open file.\n");
             initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm);
             if ((supportTextFile = fopen(strcat(fileName, ".txt"), "wb")) == NULL)
                 printf("Cannot open file.\n");
@@ -609,6 +615,8 @@ int main(int argc, char** argv)
         }
         
         }
+        
+        totalPoly += trapCount;
         printf("Finished zone %d with %ld traps\n", n, trapCount);
     }
     
@@ -630,6 +638,7 @@ int main(int argc, char** argv)
     
     clock_t end = clock();
     double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
+    printf("Finished zone plate with %ld polys\n", totalPoly);
     printf("\nZP Generation took: %0.3f seconds\n", elapsed_secs);
     system("PAUSE");
     

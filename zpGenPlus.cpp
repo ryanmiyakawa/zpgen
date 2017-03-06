@@ -101,12 +101,80 @@ void encodePoly32(long * coords, char * cCoords){
     }
 }
 
-void exportPolygon(long * coords, unsigned char * polyPre, unsigned char * polyPost, unsigned char * polyForm, FILE * outputFile, int File_format){
+// sorts coordinates by y value, lowest to highest
+void sortRows(float * x, float * y){
+    float tempX;
+    float tempY;
+    for (int m = 0; m < 3; m++){
+        for (int k = 0; k < 3; k++){
+            if (y[k] > y[k+1]){
+                tempY = y[k];
+                tempX = x[k];
+                y[k] = y[k+1];
+                x[k] = x[k+1];
+                y[k+1] = tempY;
+                x[k+1] = tempX;
+            }
+        }
+    }
+}
+
+void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed){
+    float heightTol = 5;
+    // Need to sort coords
+    float x[4] = {(float)coords[0], (float)coords[2], (float)coords[4], (float)coords[6]};
+    float y[4] = {(float)coords[1], (float)coords[3], (float)coords[5], (float)coords[7]};
+    
+    // Sortrows
+    sortRows(x,y);
+    
+    // Find intersections.  Two cases: y[3] -> y[1] (more common), or y[3] -> y[0] (less common)
+    float xU, xD;
+    if ( (x[0] > x[1]) != (x[3] > x[2]) ){  // slope of top and bottom lines are the same
+        xU = x[3] - (x[3] - x[1])*(y[3] - y[2])/(y[3] - y[1]);
+        xD = x[2] - (x[2] - x[0])*(y[2] - y[1])/(y[2] - y[0]);
+    } else { // Otherwise, send rays to lowest point and higher middle point
+        xU = x[3] - (x[3] - x[0])*(y[3] - y[2])/(y[3] - y[0]);
+        xD = x[3] - (x[3] - x[0])*(y[3] - y[1])/(y[3] - y[0]);
+    }
+    float xDL, xDR, xUL, xUR;
+    
+    // Find orientation of lower and upper triangles
+    if (xD < x[1]){
+        xDL = xD;
+        xDR = x[1];
+    } else {
+        xDL = x[1];
+        xDR = xD;
+    }
+    if (xU < x[2]){
+        xUL = xU;
+        xUR = x[2];
+    } else {
+        xUL = x[2];
+        xUR = xU;
+    }
+    
+   
+    if (y[1] - y[0] > heightTol){
+        fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
+            (long) x[0], (long)y[0], (long)xDR, (long)y[1], (long)x[0], (long)xDL); // lower tri
+    }
+    if (y[3] - y[2] > heightTol){
+        fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
+            (long) xUL, (long)y[2], (long)x[3], (long)y[3], (long)xUR, (long)x[3]); // upper tri
+    }
+    if (y[2] - y[1] > heightTol){
+        fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
+                (long) xDL, (long)y[1], (long)xUR, (long)y[2], (long)xDR, (long)xUL); // middle trap
+    }
+}
+
+void exportPolygon(long * coords, unsigned char * polyPre, unsigned char * polyPost, unsigned char * polyForm, FILE * outputFile, int File_format, long clockSpeed){
     switch (File_format){
         case 0:
             break;
         case 1:
-            break;
         case 2:
             char cCoords[40];
             fwrite(polyPre, sizeof(char), 16, outputFile);
@@ -116,6 +184,7 @@ void exportPolygon(long * coords, unsigned char * polyPre, unsigned char * polyP
             fwrite(polyPost, sizeof(char), 4, outputFile);
             break;
         case 3:
+            fractureAndWriteWRVPoly(coords, outputFile, clockSpeed);
             break;
         }
 }
@@ -145,27 +214,25 @@ bool bIsInGeometry(double cx, double cy, double obscurationSigma){
     return (r >= obscurationSigma && r <= 1.002);
 }
 
+// Specify custom mask inputs
 bool bIsInCustomMask(double cx, double cy, int customMaskIdx){
-    double dx, dy;
+    double dx, dy, r, dr;
     switch (customMaskIdx){
         case 1: // Intel MET
             return (sqrt(square(cx - .65*cos(7.5*M_PI/180)) + square(cy - .65*sin(7.5*M_PI/180))) <= .35) ||
                         (sqrt(square(cx - .65*cos(127.5*M_PI/180)) + square(cy - .65*sin(127.5*M_PI/180))) <= .35) ||
                         (sqrt(square(cx - .65*cos(247.5*M_PI/180)) + square(cy - .65*sin(247.5*M_PI/180))) <= .35);
-            break;
             
         case 2: // TDS ZP 2
             dx = cx * 0.1515;
             dy = cy * 0.1515;
             return square(dx) + square(dy + 0.1515) > square(0.018); // inner circle
-            break;
             
         case 3: // TDS ZP 3
             dx = cx * 0.2396;
             dy = cy * 0.2396;
             return square(dx)/square(0.2396) + square(dy)/square(0.1515) <= 1 &&  // outer ellipse
                     square(dx) + square(dy + 0.1515) > square(0.018); // inner circle
-            break;
             
         case 4: // TDS ZP 4
             dx = cx * 0.285;
@@ -176,12 +243,60 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx){
                     (dy + 0.1515) >= -tan(37*M_PI/180)*(dx + 0.138) &&
                     square(dx) + square(dy + 0.1515) > square(0.018); // inner circle
             
-            break;
         case 5: // Square aperture
+            dx = cx / (.06541/.1);
+            dy = cy / (.06541/.1);
             
+            return (abs(dx) > 0.43 && abs(dx) < 0.86 &&
+                    abs(dy) > 0.43 && abs(dy) < 0.86)||
+            (square(dx) + square(dy) < square(0.2));
+            
+        case 6: // Diag square aperture
+            dx = cx / (.06541/.1);
+            dy = cy / (.06541/.1);
+            
+            return ((abs(dx + dy)/sqrt(2) > 0.43 && abs(dx + dy)/sqrt(2) < 0.86) &&
+            (abs(dx - dy)/sqrt(2) > 0.43 && abs(dx - dy)/sqrt(2) < 0.86)) ||
+            (square(dx) + square(dy) < square(0.2));
+            
+        case 7: // Flip align
+            return   (abs(cx + .65) < .1 && abs(cy) < .25) ||
+            (abs(cx) < .1 && abs(cy - .65) < .25) ||
+            (abs(cx - 0.65) < .25 && abs(cy) < .1) ||
+            (abs(cx + cy)/sqrt(2) < .25 && abs(cx - cy)/sqrt(2) < .1);
+       
+        case 8: // Octopole
+            return  (sqrt(square(cx - 0.75*cos(M_PI/4))   + square(cy - 0.75*sin(M_PI/4))) <= 0.1) ||
+                    (sqrt(square(cx - 0.75*cos(2*M_PI/4)) + square(cy - 0.75*sin(2*M_PI/4))) <= 0.1) ||
+                    (sqrt(square(cx - 0.75*cos(3*M_PI/4)) + square(cy - 0.75*sin(3*M_PI/4))) <= 0.1) ||
+                    (sqrt(square(cx - 0.75*cos(4*M_PI/4)) + square(cy - 0.75*sin(4*M_PI/4))) <= 0.1) ||
+                    (sqrt(square(cx - 0.75*cos(5*M_PI/4)) + square(cy - 0.75*sin(5*M_PI/4))) <= 0.1) ||
+                    (sqrt(square(cx - 0.75*cos(6*M_PI/4)) + square(cy - 0.75*sin(6*M_PI/4))) <= 0.1) ||
+                    (sqrt(square(cx - 0.75*cos(7*M_PI/4)) + square(cy - 0.75*sin(7*M_PI/4))) <= 0.1) ||
+                    (sqrt(square(cx - 0.75*cos(8*M_PI/4)) + square(cy - 0.75*sin(8*M_PI/4))) <= 0.1) ||
+                    square(cx) + square(cy) < square(0.2);
+            
+        case 9: // small rings
+            r = sqrt(cx*cx + cy*cy);
+            dr = 0.05;
+            return (abs(r - .1) < dr/2 ||
+                    abs(r - .3) < dr/2 ||
+                    abs(r - .5) < dr/2 ||
+                    abs(r - .7) < dr/2 ||
+                    abs(r - .9) < dr/2);
             break;
+        case 10: // octal rays
+            return ((abs(cx*cos(0) + cy*sin(0)) < 1 && abs(cy*cos(0) - cx*sin(0)) < .05) ||
+                    (abs(cx*cos(1*M_PI_4) + cy*sin(1*M_PI_4)) < 1 && abs(-cx*sin(1*M_PI_4) + cy*cos(1*M_PI_4)) < .05) ||
+                    (abs(cx*cos(2*M_PI_4) + cy*sin(2*M_PI_4)) < 1 && abs(-cx*sin(2*M_PI_4) + cy*cos(2*M_PI_4)) < .05) ||
+                    (abs(cx*cos(3*M_PI_4) + cy*sin(3*M_PI_4)) < 1 && abs(-cx*sin(3*M_PI_4) + cy*cos(3*M_PI_4)) < .05)) &&
+                    cx*cx + cy*cy > square(.1);
     }
     return true;
+}
+
+bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double CRAAz){
+    return square(cos(CRAAz)*cx + sin(CRAAz)*cy)*square(anamorphicFac) + square(cos(CRAAz)*cy - sin(CRAAz)*cx) < 1;
 }
 
 double objectiveFn(double r, double th, double N, double p, double q,
@@ -252,8 +367,17 @@ void writeSupportTxtHeader(double dR1, double dRN, double bias, FILE * supportTe
     fprintf(supportTextFile, "Dose %f %f\n", getDoseFromBias(dRN, bias), getDoseFromBias(dR1, bias));
 }
 
-void writeSupportTxtZoneDose(double dR1, double dRN, double dRn, double bias, int n, double Rn,  FILE * supportTextFile){
-    fprintf(supportTextFile, "Zone %d %ld %f\n", n, getPolyClockSpeed(dR1, dRN, dRn, bias), Rn);
+void writeSupportTxtZoneDose(long clockSpeed, int n, double Rn,  FILE * supportTextFile){
+    fprintf(supportTextFile, "Zone %d %ld %f\n", n, clockSpeed, Rn);
+}
+
+void initWRV(FILE * outputFile, double minDose, double maxDose, long block_size){
+    fprintf(outputFile, "patdef 500 %ld %ld %f %f 0 0\n", block_size, block_size, maxDose, minDose);
+    fprintf(outputFile, "vepdef 20 %ld %ld\n", block_size, block_size);
+}
+
+void renderWRV(FILE * outputFile){
+    
 }
 
 void initGDS(FILE * outputFile, unsigned char * gdsPost, unsigned char* polyPre, unsigned char * polyPost, unsigned char * polyForm){
@@ -289,6 +413,16 @@ void renderGDS(FILE * outputFile, unsigned char * gdsPost){
     fclose(outputFile);
 }
 
+void notifyJoanie(float progress, int zpID){
+    char stringBuffer[100];
+    for (int k = 0; k < 100; k++)
+        stringBuffer[k] = ' ';
+    sprintf(stringBuffer, "curl \"http://joanie2.msd.lbl.gov/zpdev/index.php?r=zpStatus/putProgress&zpID=%d&progress=%0.3f\"",
+            zpID, progress);
+    system(stringBuffer);
+}
+
+
 int main(int argc, char** argv)
 {
     clock_t begin = clock();
@@ -313,7 +447,7 @@ int main(int argc, char** argv)
     }
     
     double obscurationSigma = atof(*(argv_test++));
-    double NA_Pdep = atof(*(argv_test++)); // remove this
+    double NA = atof(*(argv_test++)); // Changed from p_na to anamorphicI
     int nZerns = atoi(*(argv_test++));
     
     double orders[2 * nZerns];
@@ -323,9 +457,9 @@ int main(int argc, char** argv)
     }
     int customMaskIdx = atoi(*(argv_test++)); // Changed alpha to custom mask
     double beta = atof(*(argv_test++));
-    double CRAAz = atof(*(argv_test++))* M_PI/180;
-    double CRA = atof(*(argv_test++)) * M_PI/180;
-    double NA = atof(*(argv_test++));
+    double CRAAz = atof(*(argv_test++))* M_PI/180; // call in degrees
+    double CRA = atof(*(argv_test++)) * M_PI/180;  // call in degrees
+    double anamorphicFac = atof(*(argv_test++));
     double ZPCPhase = atof(*(argv_test++));
     double APD = atof(*(argv_test++));
     double APD_window = atof(*(argv_test++));
@@ -340,11 +474,11 @@ int main(int argc, char** argv)
     double TrapDoesPower = atof(*(argv_test++));
     //1 million pixel with a pixel size 500 pm (0.5 nm)
     // Thus it transfer to 500 um block size
-    int block_size = atof(*(argv_test++));
-    double NoP = atol(*(argv_test++));
-    double IoP = atol(*(argv_test++));
+    long block_size = atol(*(argv_test++));
+    int NoP = atoi(*(argv_test++));
+    int IoP = atoi(*(argv_test++));
     int zpID = atoi(*(argv_test++));
-    int curl_on = atoi(*(argv_test++));
+    bool curl_on = (bool) atoi(*(argv_test++));
     char * fileName = *argv_test;
     
     double lambda, bias_um;
@@ -369,7 +503,7 @@ int main(int argc, char** argv)
         printf("Weight \t\t\t= %f waves\n", orders[j + nZerns]);
     }
     
-    printf("titlted angle beta \t= %g in radian\n", beta);
+    printf("tilted angle beta \t= %g in radian\n", beta);
     printf("Max zone phase error\t= lambda/%d\n", (int)(1 / zTol));
     printf("Zone plate diameter \t= %0.2f um\n", D);
     printf("Extra Phase shift \t= %f in Radian\n", ZPCPhase);
@@ -382,8 +516,8 @@ int main(int argc, char** argv)
     printf("W\t\t\t= %f dr \n", buttressGapWidth);
     printf("T\t\t\t= %f dr \n", buttressPeriod);
     printf("Trap Dose Power \t= %f\n", TrapDoesPower);
-    printf("Block sieze for wrv file: %d\n", block_size);
-    printf("Generate %f part out of total %f parts.\n", IoP, NoP);
+    printf("Block sieze for wrv file: %ld\n", block_size);
+    printf("Generate %d part out of total %d parts.\n", IoP, NoP);
     if (Opposite_Tone == 1) {
         printf("Print in opposie tone!");
     }
@@ -421,18 +555,35 @@ int main(int argc, char** argv)
     /*************************/
     // BEGIN NEW ZP CODE:
     
-    FILE * outputFile;
+    FILE * outputFile = NULL;
     FILE * supportTextFile = NULL;
     double dbscale = 10000; // db unit to microns
-    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1,
-                                startAngle, currentAngle, arcStart, phase, RCM, tR1, tR2, f, pNA, RN, rN, RNp1, dRN;
+    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM, tR1, tR2, f, pNA, RN, rN, RNp1, dRN, minDose, maxDose;
     long totalPoly = 0;
     unsigned char gdsPost[8];
     unsigned char polyPre[16];
     unsigned char polyPost[4];
     unsigned char polyForm[4];
     
+    /* Figure out number of zones by counting the number of waves that separate rN and f */
+    f   = 1/(1/p + 1/q);
+    pNA = NA + sin(CRA);
+    RN  = p * tan(asin(pNA));    // R in plane of ZP
+    rN  = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and f
+    
+    //Compute number of zones in this zone plate using RN path length difference
+    int N = (int)(2*(rN - p)/lambda);
 
+    //Compute dRN and dR1 to bound dose information
+    RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta);
+    RNp1        = secantSolve(sqrt((N+1)*lambda*f), 0, N + 1, p, q, 0, lambda, beta);
+    dRN         = RNp1 - RN;
+    R1          = secantSolve(sqrt(lambda*f), 0, 1, p, q, 0, lambda, beta);
+    R2          = secantSolve(sqrt(2*lambda*f), 0, 2, p, q, 0, lambda, beta);
+    dR1         = R2 - R1;
+    maxDose     = dRN/(dRN - bias_um);
+    minDose     = dR1/(dR1 - bias_um);
+    
     switch (File_format){
         case 0: // arc
             
@@ -449,32 +600,17 @@ int main(int argc, char** argv)
             if ((supportTextFile = fopen(strcat(fileName, ".txt"), "wb")) == NULL)
                 printf("Cannot open file.\n");
             
-            break;
-            
+            writeSupportTxtHeader(dR1, dRN, bias_um, supportTextFile);
             break;
         case 3: // WRV
+            if ((outputFile = fopen(strcat(fileName, ".wrv"), "wb")) == NULL)
+                printf("Cannot open file.\n");
             
+            initWRV(outputFile, minDose, maxDose, block_size);
             break;
     }
-    
-    /* Figure out number of zones by counting the number of waves that separate rN and f */
-    f = 1/(1/p + 1/q);
-    pNA = NA + sin(CRA);
-    RN = p * tan(asin(pNA));    // R in plane of ZP
-    rN = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and f
-    
-    //Compute number of zones in this zone plate using RN PLD
-    int N = (int)(2*(rN - p)/lambda);
 
-    //Compute dRN and dR1 to bound dose information
-    RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta);
-    RNp1        = secantSolve(sqrt((N+1)*lambda*f), 0, N + 1, p, q, 0, lambda, beta);
-    dRN         = RNp1 - RN;
-    R1          = secantSolve(sqrt(lambda*f), 0, 1, p, q, 0, lambda, beta);
-    R2          = secantSolve(sqrt(2*lambda*f), 0, 2, p, q, 0, lambda, beta);
-    dR1         = R2 - R1;
-    if (File_format == 2) writeSupportTxtHeader(dR1, dRN, bias_um, supportTextFile);
-    
+    long clockSpeed;
     for (int n = 1; n <= N; n++){
         //Compute initial R at an arbitrary angle.  This will seed information regarding RoC for zone tol:
         rGuess     = sqrt(n*lambda*f);
@@ -484,9 +620,10 @@ int main(int argc, char** argv)
         dr         = Rnp1 - Rn;
         
         // Write to support text file
-        if (File_format == 2) writeSupportTxtZoneDose(dR1, dRN, dr, bias_um, n, Rn, supportTextFile);
+        clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
+        if (File_format == 2) writeSupportTxtZoneDose(clockSpeed, n, Rn, supportTextFile);
     
-    //If buttresses are specified, condition segment width on zone parity
+        //If buttresses are specified, condition segment width on zone parity
         buttressWidth = 0;
         switch (FSIdx){
             case 0:// % no buttresses
@@ -556,6 +693,13 @@ int main(int argc, char** argv)
             continue;
         }
         
+        // Accept or reject trap based on anamorphic factor
+        if (anamorphicFac != 1 && anamorphicFac > 0 &&
+                !bIsInAnamorphicPupil(cx, cy, anamorphicFac, CRAAz)){
+            currentAngle = currentAngle + alpha;
+            continue;
+        }
+    
         // Apply custom mask
         if (customMaskIdx != 0 && !bIsInCustomMask(cx, cy, customMaskIdx)){
             currentAngle = currentAngle + alpha;
@@ -570,7 +714,7 @@ int main(int argc, char** argv)
         Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta);
         
         // Compute CM and trap coords
-        dr = Rnp1 - Rn;
+        dr  = Rnp1 - Rn;
         RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching vertices
         tR1 = (RCM - dr/2)*1/cos(alpha/2) + bias_um/2;
         tR2 = (RCM + dr/2)*1/cos(alpha/2) - bias_um/2;
@@ -588,7 +732,7 @@ int main(int argc, char** argv)
         trapCoords[9] = (long) dbscale*tR1*sin(currentAngle - alpha/2);
     
         // Export shape
-        exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format);
+        exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed);
     
         trapCount++;
     
@@ -618,7 +762,13 @@ int main(int argc, char** argv)
         
         totalPoly += trapCount;
         printf("Finished zone %d with %ld traps\n", n, trapCount);
+        if (curl_on && n % 100 == 0) {
+            float progress = ((float)n)/((float)N);
+            notifyJoanie(progress, zpID);
+        }
+        
     }
+ 
     
     switch (File_format){
         case 0: // arc
@@ -632,7 +782,7 @@ int main(int argc, char** argv)
             fclose(supportTextFile);
             break;
         case 3: // WRV
-            
+            renderWRV(outputFile);
             break;
     }
     
@@ -640,8 +790,9 @@ int main(int argc, char** argv)
     double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
     printf("Finished zone plate with %ld polys\n", totalPoly);
     printf("\nZP Generation took: %0.3f seconds\n", elapsed_secs);
-    system("PAUSE");
     
+    if (curl_on)
+        notifyJoanie(1, zpID);
     
     return 0;
 }

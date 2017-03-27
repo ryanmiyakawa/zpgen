@@ -64,8 +64,8 @@ double zgenpt(int j, double r, double th) {
             kParity = 1;
         
         Rv += kParity*nChooseK((double)(n - k), (double)k)
-        *nChooseK((double)(n - 2 * k), (double)(p - k))
-        *pow(r, (double)(n - 2 * k));
+            *nChooseK((double)(n - 2 * k), (double)(p - k))
+            *pow(r, (double)(n - 2 * k));
     }
 
     // Compute value of azimuthal function:
@@ -101,7 +101,7 @@ void encodePoly32(long * coords, char * cCoords){
     }
 }
 
-// sorts coordinates by y value, lowest to highest
+// sorts coordinates by y value, lowest to highest using bubble sort
 void sortRows(float * x, float * y){
     float tempX;
     float tempY;
@@ -119,8 +119,9 @@ void sortRows(float * x, float * y){
     }
 }
 
+// Fractures trapeizoids into two triangles and a horizontal trapezoid for WRV
 void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed){
-    float heightTol = 5;
+    float heightTol = 5; // shapes with smaller than 0.5 nm height are ignored
     // Need to sort coords
     float x[4] = {(float)coords[0], (float)coords[2], (float)coords[4], (float)coords[6]};
     float y[4] = {(float)coords[1], (float)coords[3], (float)coords[5], (float)coords[7]};
@@ -155,7 +156,6 @@ void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed){
         xUR = xU;
     }
     
-   
     if (y[1] - y[0] > heightTol){
         fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
             (long) x[0], (long)y[0], (long)xDR, (long)y[1], (long)x[0], (long)xDL); // lower tri
@@ -170,10 +170,18 @@ void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed){
     }
 }
 
-void exportPolygon(long * coords, unsigned char * polyPre, unsigned char * polyPost, unsigned char * polyForm, FILE * outputFile, int File_format, long clockSpeed){
+void exportArc(double R, double dR, double theta, double dTheta, double dose, double nwaUnit,
+               double offsetX, double offsetY, FILE * outputFile){
+    fprintf(outputFile, "ARC_S %12.4f %10.4f %10.4f %10.4f  %5.2f  %5.2f %5.2f %5.2f D%3.4f S1.00 T-14000\n",
+            R/nwaUnit, fmod((theta * 180/M_PI), 360), dR/nwaUnit, dTheta * 180/M_PI,
+            offsetX/nwaUnit, offsetY/nwaUnit, 0., 0., dose);
+
+}
+
+
+void exportPolygon(long * coords, unsigned char * polyPre, unsigned char * polyPost,
+                   unsigned char * polyForm, FILE * outputFile, int File_format, long clockSpeed){
     switch (File_format){
-        case 0:
-            break;
         case 1:
         case 2:
             char cCoords[40];
@@ -291,12 +299,16 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx){
                     (abs(cx*cos(2*M_PI_4) + cy*sin(2*M_PI_4)) < 1 && abs(-cx*sin(2*M_PI_4) + cy*cos(2*M_PI_4)) < .05) ||
                     (abs(cx*cos(3*M_PI_4) + cy*sin(3*M_PI_4)) < 1 && abs(-cx*sin(3*M_PI_4) + cy*cos(3*M_PI_4)) < .05)) &&
                     cx*cx + cy*cy > square(.1);
+        case 11: // square aperture
+            return abs(cx) <= 1/sqrt(2) && abs(cy) <= 1/sqrt(2);
     }
     return true;
 }
 
-bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double CRAAz){
-    return square(cos(CRAAz)*cx + sin(CRAAz)*cy)*square(anamorphicFac) + square(cos(CRAAz)*cy - sin(CRAAz)*cx) < 1;
+bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double CRAAz, double obscurationSigma){
+    
+    return (square(cos(CRAAz)*cx + sin(CRAAz)*cy)*square(anamorphicFac) + square(cos(CRAAz)*cy - sin(CRAAz)*cx) < 1) &&
+    ((square(cos(CRAAz)*cx + sin(CRAAz)*cy)*square(anamorphicFac) + square(cos(CRAAz)*cy - sin(CRAAz)*cx)) >= square(obscurationSigma));
 }
 
 double objectiveFn(double r, double th, double N, double p, double q,
@@ -376,9 +388,16 @@ void initWRV(FILE * outputFile, double minDose, double maxDose, long block_size)
     fprintf(outputFile, "vepdef 20 %ld %ld\n", block_size, block_size);
 }
 
-void renderWRV(FILE * outputFile){
-    
+void initARC(double centerX, double centerY, double nwaUnit, FILE * outputFile){
+    fprintf(outputFile, "[HEADER]\n");
+    fprintf(outputFile, "unit_size %0.2f nm/px\n", nwaUnit*1000);
+    fprintf(outputFile, "Center_um %0.4f %0.4f\n", centerX, centerY);
+    fprintf(outputFile, "Center_px %0.2f %0.2f\n", centerX/nwaUnit, centerY/nwaUnit);
+    fprintf(outputFile, "\n\n");
+    fprintf(outputFile, "[STITCH]\n\n%d, %4d\n%d, %4d\n\n[DATA]\n\n", 0, 0, 0, 0);
 }
+
+
 
 void initGDS(FILE * outputFile, unsigned char * gdsPost, unsigned char* polyPre, unsigned char * polyPost, unsigned char * polyForm){
     int gdspreamble[102] = { 0, 6, 0, 2, 0, 7, 0, 28, 1, 2, 230, 43, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0,
@@ -410,6 +429,13 @@ void initGDS(FILE * outputFile, unsigned char * gdsPost, unsigned char* polyPre,
 
 void renderGDS(FILE * outputFile, unsigned char * gdsPost){
     fwrite(gdsPost, sizeof(char), 8, outputFile);
+    fclose(outputFile);
+}
+void renderARC(FILE * outputFile){
+    fprintf(outputFile, "[DATA]\n");
+    fclose(outputFile);
+}
+void renderWRV(FILE * outputFile){
     fclose(outputFile);
 }
 
@@ -471,7 +497,7 @@ int main(int argc, char** argv)
     int FSIdx = atof(*(argv_test++));
     double buttressGapWidth = atof(*(argv_test++));
     double buttressPeriod = atof(*(argv_test++));
-    double TrapDoesPower = atof(*(argv_test++));
+    int setToCenter = atoi(*(argv_test++));
     //1 million pixel with a pixel size 500 pm (0.5 nm)
     // Thus it transfer to 500 um block size
     long block_size = atol(*(argv_test++));
@@ -484,6 +510,8 @@ int main(int argc, char** argv)
     double lambda, bias_um;
     double NA_P = NA + sin(CRA);
     double D =  2 * (p*q / (p + q))*tan(asin(NA_P));
+    
+    double nwaUnit = .004; // NWA unit for ARC file in [um/px]
     
     lambda = lambda_nm / 1000;
     bias_um = bias_nm/1000;
@@ -515,7 +543,6 @@ int main(int argc, char** argv)
     printf("Free Standing \t\t= %d \n", FSIdx);
     printf("W\t\t\t= %f dr \n", buttressGapWidth);
     printf("T\t\t\t= %f dr \n", buttressPeriod);
-    printf("Trap Dose Power \t= %f\n", TrapDoesPower);
     printf("Block sieze for wrv file: %ld\n", block_size);
     printf("Generate %d part out of total %d parts.\n", IoP, NoP);
     if (Opposite_Tone == 1) {
@@ -558,7 +585,8 @@ int main(int argc, char** argv)
     FILE * outputFile = NULL;
     FILE * supportTextFile = NULL;
     double dbscale = 10000; // db unit to microns
-    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM, tR1, tR2, f, pNA, RN, rN, RNp1, dRN, minDose, maxDose;
+    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rN, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0;
+
     long totalPoly = 0;
     unsigned char gdsPost[8];
     unsigned char polyPre[16];
@@ -570,6 +598,12 @@ int main(int argc, char** argv)
     pNA = NA + sin(CRA);
     RN  = p * tan(asin(pNA));    // R in plane of ZP
     rN  = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and f
+    zpCenterX = f*tan(CRA)*cos(CRAAz);
+    zpCenterY = f*tan(CRA)*sin(CRAAz);
+    if (setToCenter){
+        offsetX = -zpCenterX;
+        offsetY = -zpCenterY;
+    }
     
     //Compute number of zones in this zone plate using RN path length difference
     int N = (int)(2*(rN - p)/lambda);
@@ -585,8 +619,10 @@ int main(int argc, char** argv)
     minDose     = dR1/(dR1 - bias_um);
     
     switch (File_format){
-        case 0: // arc
-            
+        case 0: // NWA (arc)
+            if ((outputFile = fopen(strcat(fileName, ".nwa"), "wb")) == NULL)
+                printf("Cannot open file.\n");
+            initARC(offsetX, offsetY, nwaUnit, outputFile);
             break;
         case 1: // GDS
             if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
@@ -670,7 +706,7 @@ int main(int argc, char** argv)
     currentAngle = startAngle;
     
     while(true){
-        if (currentAngle >= startAngle + 2*M_PI){
+        if (currentAngle >= startAngle + 2 * M_PI){
             break;
         }
         // Get relative coordinates
@@ -687,19 +723,21 @@ int main(int argc, char** argv)
             cy = (sin(atan(y/p)) - sin(CRA)*sin(CRAAz))/NA;
         }
     
-        // Accept or reject trap based on non-aberrated geometry
-        if (!bIsInGeometry(cx, cy, obscurationSigma)){
-            currentAngle = currentAngle + alpha;
-            continue;
+        
+        // Accept or reject trap based on pupil boundaries and obscuration
+        if (anamorphicFac != 1 && anamorphicFac > 0){ // Anamorphic case
+            if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, CRAAz, obscurationSigma)){
+                currentAngle = currentAngle + alpha;
+                continue;
+            }
+        } else { // isomorphic case
+            if (!bIsInGeometry(cx, cy, obscurationSigma)){
+                currentAngle = currentAngle + alpha;
+                continue;
+            }
         }
         
-        // Accept or reject trap based on anamorphic factor
-        if (anamorphicFac != 1 && anamorphicFac > 0 &&
-                !bIsInAnamorphicPupil(cx, cy, anamorphicFac, CRAAz)){
-            currentAngle = currentAngle + alpha;
-            continue;
-        }
-    
+        
         // Apply custom mask
         if (customMaskIdx != 0 && !bIsInCustomMask(cx, cy, customMaskIdx)){
             currentAngle = currentAngle + alpha;
@@ -709,30 +747,41 @@ int main(int argc, char** argv)
         // Compute phase terms
         phase = getPhaseTerm(cx, cy, orders, nZerns, ZPCPhase, ZPCR1, ZPCR2);
     
-        // Use initial R as seeds for each subsequent comp
+        // Use initial R as seeds for each subsequent compuptation of zone radii
         Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta);
         Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta);
         
-        // Compute CM and trap coords
+        // Compute CM to optimized trap to arc and trap coords
         dr  = Rnp1 - Rn;
-        RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching vertices
-        tR1 = (RCM - dr/2)*1/cos(alpha/2) + bias_um/2;
-        tR2 = (RCM + dr/2)*1/cos(alpha/2) - bias_um/2;
-    
-        long trapCoords[10];
-        trapCoords[0] = (long) dbscale*tR1*cos(currentAngle - alpha/2);
-        trapCoords[1] = (long) dbscale*tR1*sin(currentAngle - alpha/2);
-        trapCoords[2] = (long) dbscale*tR1*cos(currentAngle + alpha/2);
-        trapCoords[3] = (long) dbscale*tR1*sin(currentAngle + alpha/2);
-        trapCoords[4] = (long) dbscale*tR2*cos(currentAngle + alpha/2);
-        trapCoords[5] = (long) dbscale*tR2*sin(currentAngle + alpha/2);
-        trapCoords[6] = (long) dbscale*tR2*cos(currentAngle - alpha/2);
-        trapCoords[7] = (long) dbscale*tR2*sin(currentAngle - alpha/2);
-        trapCoords[8] = (long) dbscale*tR1*cos(currentAngle - alpha/2);
-        trapCoords[9] = (long) dbscale*tR1*sin(currentAngle - alpha/2);
-    
-        // Export shape
-        exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed);
+        RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
+        
+        if (File_format == 0){ // ARC format
+            doseBias = dr/(dr - bias_um); // Inverse of zone area bias
+            exportArc(Rn + bias_um/2, dr - bias_um, currentAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+        }
+        else { // GDS or WRV format
+            
+            // recompute clockspeed, useful if zone width is varying by angle
+            clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
+            
+            tR1 = (RCM - dr/2)*1/cos(alpha/2) + bias_um/2;
+            tR2 = (RCM + dr/2)*1/cos(alpha/2) - bias_um/2;
+        
+            long trapCoords[10];
+            trapCoords[0] = (long) dbscale*(tR1*cos(currentAngle - alpha/2) + offsetX);
+            trapCoords[1] = (long) dbscale*(tR1*sin(currentAngle - alpha/2) + offsetY);
+            trapCoords[2] = (long) dbscale*(tR1*cos(currentAngle + alpha/2) + offsetX);
+            trapCoords[3] = (long) dbscale*(tR1*sin(currentAngle + alpha/2) + offsetY);
+            trapCoords[4] = (long) dbscale*(tR2*cos(currentAngle + alpha/2) + offsetX);
+            trapCoords[5] = (long) dbscale*(tR2*sin(currentAngle + alpha/2) + offsetY);
+            trapCoords[6] = (long) dbscale*(tR2*cos(currentAngle - alpha/2) + offsetX);
+            trapCoords[7] = (long) dbscale*(tR2*sin(currentAngle - alpha/2) + offsetY);
+            trapCoords[8] = (long) dbscale*(tR1*cos(currentAngle - alpha/2) + offsetX);
+            trapCoords[9] = (long) dbscale*(tR1*sin(currentAngle - alpha/2) + offsetY);
+        
+            // Export shape
+            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed);
+        }
     
         trapCount++;
     
@@ -761,7 +810,11 @@ int main(int argc, char** argv)
         }
         
         totalPoly += trapCount;
-        printf("Finished zone %d with %ld traps\n", n, trapCount);
+        if (File_format == 0){ // ARC format
+            printf("Finished zone %d with %ld arcs\n", n, trapCount);
+        } else {
+            printf("Finished zone %d with %ld traps\n", n, trapCount);
+        }
         if (curl_on && n % 100 == 0) {
             float progress = ((float)n)/((float)N);
             notifyJoanie(progress, zpID);
@@ -772,7 +825,7 @@ int main(int argc, char** argv)
     
     switch (File_format){
         case 0: // arc
-            
+            renderARC(outputFile);
             break;
         case 1: // GDS
             renderGDS(outputFile, gdsPost);
@@ -788,7 +841,7 @@ int main(int argc, char** argv)
     
     clock_t end = clock();
     double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
-    printf("Finished zone plate with %ld polys\n", totalPoly);
+    printf("Finished zone plate with %ld shapes\n", totalPoly);
     printf("\nZP Generation took: %0.3f seconds\n", elapsed_secs);
     
     if (curl_on)

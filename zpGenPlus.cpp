@@ -383,8 +383,8 @@ void writeSupportTxtZoneDose(long clockSpeed, int n, double Rn,  FILE * supportT
     fprintf(supportTextFile, "Zone %d %ld %f\n", n, clockSpeed, Rn);
 }
 
-void initWRV(FILE * outputFile, double minDose, double maxDose, long block_size){
-    fprintf(outputFile, "patdef 500 %ld %ld %f %f 0 0\n", block_size, block_size, maxDose, minDose);
+void initWRV(FILE * outputFile, double minDose, double maxDose, long block_size, long block_size_unit_pm){
+    fprintf(outputFile, "patdef %ld %ld %ld %f %f 0 0\n", block_size_unit_pm, block_size, block_size, maxDose, minDose);
     fprintf(outputFile, "vepdef 20 %ld %ld\n", block_size, block_size);
 }
 
@@ -501,6 +501,7 @@ int main(int argc, char** argv)
     //1 million pixel with a pixel size 500 pm (0.5 nm)
     // Thus it transfer to 500 um block size
     long block_size = atol(*(argv_test++));
+    long block_unit_size_pm = 500;
     int NoP = atoi(*(argv_test++));
     int IoP = atoi(*(argv_test++));
     int zpID = atoi(*(argv_test++));
@@ -515,9 +516,6 @@ int main(int argc, char** argv)
     
     lambda = lambda_nm / 1000;
     bias_um = bias_nm/1000;
-    
-    //From block_size x resolution limit (1000pm = 1nm)
-    block_size = block_size * 10;
     
     printf("\nCreating zone plate:\nNA_P \t\t\t= %0.3f\n", NA_P);
     printf("NA_child \t\t= %f \n", NA);
@@ -584,7 +582,7 @@ int main(int argc, char** argv)
     
     FILE * outputFile = NULL;
     FILE * supportTextFile = NULL;
-    double dbscale = 10000; // db unit to microns
+    double dbscale; // db unit to microns
     double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rN, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0;
 
     long totalPoly = 0;
@@ -600,10 +598,16 @@ int main(int argc, char** argv)
     rN  = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and f
     zpCenterX = f*tan(CRA)*cos(CRAAz);
     zpCenterY = f*tan(CRA)*sin(CRAAz);
+    
     if (setToCenter){
         offsetX = -zpCenterX;
         offsetY = -zpCenterY;
     }
+    if (File_format == 3) { // WRV: shift by one half block size
+        offsetX += block_size*block_unit_size_pm / 2 / 1000000;
+        offsetY += block_size*block_unit_size_pm / 2 / 1000000;
+    }
+
     
     //Compute number of zones in this zone plate using RN path length difference
     int N = (int)(2*(rN - p)/lambda);
@@ -625,11 +629,13 @@ int main(int argc, char** argv)
             initARC(offsetX, offsetY, nwaUnit, outputFile);
             break;
         case 1: // GDS
+            dbscale = 10000; // db unit to microns
             if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
                 printf("Cannot open file.\n");
             initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm);
             break;
         case 2://GDS + txt
+            dbscale = 10000; // db unit to microns
             if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
                 printf("Cannot open file.\n");
             initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm);
@@ -639,10 +645,11 @@ int main(int argc, char** argv)
             writeSupportTxtHeader(dR1, dRN, bias_um, supportTextFile);
             break;
         case 3: // WRV
+            dbscale = 1000000/block_unit_size_pm; // db unit to microns
             if ((outputFile = fopen(strcat(fileName, ".wrv"), "wb")) == NULL)
                 printf("Cannot open file.\n");
             
-            initWRV(outputFile, minDose, maxDose, block_size);
+            initWRV(outputFile, minDose, maxDose, block_size, block_unit_size_pm);
             break;
     }
 

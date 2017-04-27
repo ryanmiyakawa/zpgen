@@ -310,20 +310,20 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx){
     return true;
 }
 
-bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double CRAAz, double obscurationSigma){
+bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double obscurationSigma){
     
-    return (square(cos(CRAAz)*cx + sin(CRAAz)*cy)*square(anamorphicFac) + square(cos(CRAAz)*cy - sin(CRAAz)*cx) < 1) &&
-    ((square(cos(CRAAz)*cx + sin(CRAAz)*cy)*square(anamorphicFac) + square(cos(CRAAz)*cy - sin(CRAAz)*cx)) >= square(obscurationSigma));
+    return (square(cy)*square(anamorphicFac) + square(cx) < 1) &&
+    ((square(cy)*square(anamorphicFac) + square(cx)) >= square(obscurationSigma));
 }
 
 double objectiveFn(double r, double th, double N, double p, double q,
-                   double phase, double lambda, double beta, double CRAAz) {
+                   double phase, double lambda, double beta) {
     
     double pp, qp, rp, zpTerm, phTerm, plTermP, plTermQ;
     
-    pp = p - r*sin(beta)*sin(th - CRAAz);
-    qp = q + r*sin(beta)*sin(th - CRAAz);
-    rp = r*sqrt(sin(th - CRAAz)*sin(th - CRAAz)*cos(beta)*cos(beta) + cos(th - CRAAz) * cos(th - CRAAz));
+    pp = p - r*sin(beta)*sin(th);
+    qp = q + r*sin(beta)*sin(th);
+    rp = r*sqrt(sin(th)*sin(th)*cos(beta)*cos(beta) + cos(th) * cos(th));
     
     plTermP = rp*sqrt(pp*pp/rp/rp + 1) - pp;
     plTermQ = rp*sqrt(qp*qp/rp/rp + 1) - qp;
@@ -341,7 +341,7 @@ double objectiveFn(double r, double th, double N, double p, double q,
     return plTermP + plTermQ + zpTerm + phTerm;
 }
 
-double secantSolve(double dRGuess, double th, double N, double p, double q, double phase, double lambda, double beta, double CRAAz){
+double secantSolve(double dRGuess, double th, double N, double p, double q, double phase, double lambda, double beta){
     double tolX = 0.00001;
     int maxIter = 20;
     
@@ -350,8 +350,8 @@ double secantSolve(double dRGuess, double th, double N, double p, double q, doub
     x1 = dRGuess;
     x2 = x1*1.02;
     for (int currentIter = 0; currentIter < maxIter; currentIter++){
-        fxm1 = objectiveFn(x1, th, N, p, q, phase, lambda, beta, CRAAz);
-        fxm2 = objectiveFn(x2, th, N, p, q, phase, lambda, beta, CRAAz);
+        fxm1 = objectiveFn(x1, th, N, p, q, phase, lambda, beta);
+        fxm2 = objectiveFn(x2, th, N, p, q, phase, lambda, beta);
 
         R0 = x1 - fxm1*(x1 - x2) / (fxm1 - fxm2);
         if (abs(R0 - x1) < tolX)
@@ -404,7 +404,7 @@ void initARC(double centerX, double centerY, double nwaUnit, FILE * outputFile){
 
 
 
-void initGDS(FILE * outputFile, unsigned char * gdsPost, unsigned char* polyPre, unsigned char * polyPost, unsigned char * polyForm){
+void initGDS(FILE * outputFile, unsigned char * gdsPost, unsigned char* polyPre, unsigned char * polyPost, unsigned char * polyForm, int layerNumber){
     int gdspreamble[102] = { 0, 6, 0, 2, 0, 7, 0, 28, 1, 2, 230, 43, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0,
         230, 43, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 10, 2, 6, 110, 111, 110, 97,
         109, 101, 0, 20, 3, 5, 61, 104, 219, 139, 172, 113, 12, 180, 56, 109,
@@ -413,7 +413,9 @@ void initGDS(FILE * outputFile, unsigned char * gdsPost, unsigned char* polyPre,
         0, 10, 6, 6, 110, 111, 110, 97, 109, 101};
     
     int gdspostamble[8]     = {0, 4, 7, 0, 0, 4, 4, 0};
-    int polypreamble[16]    = {0, 4, 8, 0, 0, 6, 13, 2, 0, 1, 0, 6, 14, 2, 0, 0};
+    
+    // {0, 4, 8, 0, 0, 6, 13, 2, 0, [layer = 1], 0, 6, 14, 2, 0, 0};
+    int polypreamble[16]    = {0, 4, 8, 0, 0, 6, 13, 2, 0, layerNumber, 0, 6, 14, 2, 0, 0};
     int polypostamble[4]    = {0, 4, 17, 0};
     int polyBlockFormat[4]  = {0, 44, 16, 3};
     
@@ -509,7 +511,8 @@ int main(int argc, char** argv)
     long block_unit_size_pm = 500;
     int NoP = atoi(*(argv_test++));
     int IoP = atoi(*(argv_test++));
-    int zpID = atoi(*(argv_test++));
+    //int zpID = atoi(*(argv_test++));
+    int layerNumber = atoi(*(argv_test++));
     bool curl_on = (bool) atoi(*(argv_test++));
     char * fileName = *argv_test;
     
@@ -587,8 +590,8 @@ int main(int argc, char** argv)
     
     FILE * outputFile = NULL;
     FILE * supportTextFile = NULL;
-    double dbscale; // db unit to microns
-    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rN, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, rcx, rcy;
+    double dbscale = 0; // db unit to microns
+    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rN, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
 
     long totalPoly = 0;
     unsigned char gdsPost[8];
@@ -618,11 +621,11 @@ int main(int argc, char** argv)
     int N = (int)(2*(rN - p)/lambda);
 
     //Compute dRN and dR1 to bound dose information
-    RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta, CRAAz);
-    RNp1        = secantSolve(sqrt((N+1)*lambda*f), 0, N + 1, p, q, 0, lambda, beta, CRAAz);
+    RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta);
+    RNp1        = secantSolve(sqrt((N+1)*lambda*f), 0, N + 1, p, q, 0, lambda, beta);
     dRN         = RNp1 - RN;
-    R1          = secantSolve(sqrt(lambda*f), 0, 1, p, q, 0, lambda, beta, CRAAz);
-    R2          = secantSolve(sqrt(2*lambda*f), 0, 2, p, q, 0, lambda, beta, CRAAz);
+    R1          = secantSolve(sqrt(lambda*f), 0, 1, p, q, 0, lambda, beta);
+    R2          = secantSolve(sqrt(2*lambda*f), 0, 2, p, q, 0, lambda, beta);
     dR1         = R2 - R1;
     maxDose     = dRN/(dRN - bias_um);
     minDose     = dR1/(dR1 - bias_um);
@@ -637,13 +640,13 @@ int main(int argc, char** argv)
             dbscale = 10000; // db unit to microns
             if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
                 printf("Cannot open file.\n");
-            initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm);
+            initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm, layerNumber);
             break;
         case 2://GDS + txt
             dbscale = 10000; // db unit to microns
             if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
                 printf("Cannot open file.\n");
-            initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm);
+            initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm, layerNumber);
             if ((supportTextFile = fopen(strcat(fileName, ".txt"), "wb")) == NULL)
                 printf("Cannot open file.\n");
             
@@ -664,8 +667,8 @@ int main(int argc, char** argv)
         //Compute initial R at an arbitrary angle.  This will seed information regarding RoC for zone tol:
         rGuess     = sqrt(n*lambda*f);
         rGuessp1   = sqrt((n + 1)*lambda*f);
-        Rn         = secantSolve(rGuess, 0, n, p, q, 0, lambda, beta, CRAAz);
-        Rnp1       = secantSolve(rGuessp1, 0, n + 1, p, q, 0, lambda, beta, CRAAz);
+        Rn         = secantSolve(rGuess, 0, n, p, q, 0, lambda, beta);
+        Rnp1       = secantSolve(rGuessp1, 0, n + 1, p, q, 0, lambda, beta);
         dr         = Rnp1 - Rn;
         
         // Write to support text file
@@ -738,14 +741,14 @@ int main(int argc, char** argv)
             cy = sin(atan(y/p))/NA;
         }
         else{
-            cx = (sin(atan(x/p)) - sin(CRA)*cos(CRAAz))/NA;
-            cy = (sin(atan(y/p)) - sin(CRA)*sin(CRAAz))/NA;
+            cx = (sin(atan(x/p)))/NA;
+            cy = (sin(atan(y/p)) - sin(CRA))/NA;
         }
     
         
         // Accept or reject trap based on pupil boundaries and obscuration
         if (anamorphicFac != 1 && anamorphicFac > 0){ // Anamorphic case
-            if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, CRAAz, obscurationSigma)){
+            if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)){
                 currentAngle = currentAngle + alpha;
                 continue;
             }
@@ -759,12 +762,7 @@ int main(int argc, char** argv)
         
         // Apply custom mask
         if (customMaskIdx != 0){
-            // Need to rotate coordinates based on CRAAz.  Unfortunately, custom masks here were designed with
-            // CRAAz = 90 in mind, so we need to rotate -90;
-            rcx = cx*cos(-CRAAz + M_PI_2) - cy*sin(-CRAAz + M_PI_2);
-            rcy = cx*sin(-CRAAz + M_PI_2) + cy*cos(-CRAAz + M_PI_2);
-            
-            if(!bIsInCustomMask(rcx, rcy, customMaskIdx)){
+            if(!bIsInCustomMask(cx, cy, customMaskIdx)){
                 currentAngle = currentAngle + alpha;
                 continue;
             }
@@ -774,19 +772,21 @@ int main(int argc, char** argv)
         phase = getPhaseTerm(cx, cy, orders, nZerns, ZPCPhase, ZPCR1, ZPCR2);
     
         // Use initial R as seeds for each subsequent compuptation of zone radii
-        Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta, CRAAz);
-        Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta, CRAAz);
+        Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta);
+        Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta);
         
         // Compute CM to optimized trap to arc and trap coords
         dr  = Rnp1 - Rn;
         RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
         
+        drawAngle = currentAngle + CRAAz;
+        
         if (File_format == 0){ // ARC format
             doseBias = dr/(dr - bias_um); // Inverse of zone area bias
             if (isGapZone){
-                exportArc(Rn - bias_um/2, dr + bias_um, currentAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+                exportArc(Rn - bias_um/2, dr + bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
             } else {
-                exportArc(Rn + bias_um/2, dr - bias_um, currentAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+                exportArc(Rn + bias_um/2, dr - bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
             }
         }
         else { // GDS or WRV format
@@ -803,16 +803,16 @@ int main(int argc, char** argv)
             }
         
             long trapCoords[10];
-            trapCoords[0] = (long) dbscale*(tR1*cos(currentAngle - alpha/2) + offsetX);
-            trapCoords[1] = (long) dbscale*(tR1*sin(currentAngle - alpha/2) + offsetY);
-            trapCoords[2] = (long) dbscale*(tR1*cos(currentAngle + alpha/2) + offsetX);
-            trapCoords[3] = (long) dbscale*(tR1*sin(currentAngle + alpha/2) + offsetY);
-            trapCoords[4] = (long) dbscale*(tR2*cos(currentAngle + alpha/2) + offsetX);
-            trapCoords[5] = (long) dbscale*(tR2*sin(currentAngle + alpha/2) + offsetY);
-            trapCoords[6] = (long) dbscale*(tR2*cos(currentAngle - alpha/2) + offsetX);
-            trapCoords[7] = (long) dbscale*(tR2*sin(currentAngle - alpha/2) + offsetY);
-            trapCoords[8] = (long) dbscale*(tR1*cos(currentAngle - alpha/2) + offsetX);
-            trapCoords[9] = (long) dbscale*(tR1*sin(currentAngle - alpha/2) + offsetY);
+            trapCoords[0] = (long) dbscale*(tR1*cos(drawAngle - alpha/2) + offsetX);
+            trapCoords[1] = (long) dbscale*(tR1*sin(drawAngle - alpha/2) + offsetY);
+            trapCoords[2] = (long) dbscale*(tR1*cos(drawAngle + alpha/2) + offsetX);
+            trapCoords[3] = (long) dbscale*(tR1*sin(drawAngle + alpha/2) + offsetY);
+            trapCoords[4] = (long) dbscale*(tR2*cos(drawAngle + alpha/2) + offsetX);
+            trapCoords[5] = (long) dbscale*(tR2*sin(drawAngle + alpha/2) + offsetY);
+            trapCoords[6] = (long) dbscale*(tR2*cos(drawAngle - alpha/2) + offsetX);
+            trapCoords[7] = (long) dbscale*(tR2*sin(drawAngle - alpha/2) + offsetY);
+            trapCoords[8] = (long) dbscale*(tR1*cos(drawAngle - alpha/2) + offsetX);
+            trapCoords[9] = (long) dbscale*(tR1*sin(drawAngle - alpha/2) + offsetY);
         
             // Export shape
             exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed);
@@ -853,7 +853,7 @@ int main(int argc, char** argv)
         }
         if (curl_on && n % 100 == 0) {
             float progress = ((float)n)/((float)N);
-            notifyJoanie(progress, zpID);
+            notifyJoanie(progress, 1);
         }
         
     }
@@ -881,7 +881,7 @@ int main(int argc, char** argv)
     printf("\nZP Generation took: %0.3f seconds\n", elapsed_secs);
     
     if (curl_on)
-        notifyJoanie(1, zpID);
+        notifyJoanie(1, 1);
     
     return 0;
 }

@@ -217,9 +217,14 @@ double getPhaseTerm(double cx, double cy, double * orders, int nZerns, double ZP
     return ph;
 }
 
-bool bIsInGeometry(double cx, double cy, double obscurationSigma){
+bool bIsInGeometry(double cx, double cy, double obscurationSigma, double CRA){
     double r = sqrt(cx*cx + cy*cy);
-    return (r >= obscurationSigma && r <= 1.002);
+    if (CRA == 0){
+        return (r >= obscurationSigma);
+    }else {
+        return (r >= obscurationSigma && r <= 1.002);
+    }
+
 }
 
 // Specify custom mask inputs
@@ -312,13 +317,13 @@ bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double CRA
 }
 
 double objectiveFn(double r, double th, double N, double p, double q,
-                   double phase, double lambda, double beta) {
+                   double phase, double lambda, double beta, double CRAAz) {
     
     double pp, qp, rp, zpTerm, phTerm, plTermP, plTermQ;
     
-    pp = p - r*sin(beta)*sin(th);
-    qp = q + r*sin(beta)*sin(th);
-    rp = r*sqrt(sin(th)*sin(th)*cos(beta)*cos(beta) + cos(th) * cos(th));
+    pp = p - r*sin(beta)*sin(th - CRAAz);
+    qp = q + r*sin(beta)*sin(th - CRAAz);
+    rp = r*sqrt(sin(th - CRAAz)*sin(th - CRAAz)*cos(beta)*cos(beta) + cos(th - CRAAz) * cos(th - CRAAz));
     
     plTermP = rp*sqrt(pp*pp/rp/rp + 1) - pp;
     plTermQ = rp*sqrt(qp*qp/rp/rp + 1) - qp;
@@ -336,7 +341,7 @@ double objectiveFn(double r, double th, double N, double p, double q,
     return plTermP + plTermQ + zpTerm + phTerm;
 }
 
-double secantSolve(double dRGuess, double th, double N, double p, double q, double phase, double lambda, double beta){
+double secantSolve(double dRGuess, double th, double N, double p, double q, double phase, double lambda, double beta, double CRAAz){
     double tolX = 0.00001;
     int maxIter = 20;
     
@@ -345,8 +350,8 @@ double secantSolve(double dRGuess, double th, double N, double p, double q, doub
     x1 = dRGuess;
     x2 = x1*1.02;
     for (int currentIter = 0; currentIter < maxIter; currentIter++){
-        fxm1 = objectiveFn(x1, th, N, p, q, phase, lambda, beta);
-        fxm2 = objectiveFn(x2, th, N, p, q, phase, lambda, beta);
+        fxm1 = objectiveFn(x1, th, N, p, q, phase, lambda, beta, CRAAz);
+        fxm2 = objectiveFn(x2, th, N, p, q, phase, lambda, beta, CRAAz);
 
         R0 = x1 - fxm1*(x1 - x2) / (fxm1 - fxm2);
         if (abs(R0 - x1) < tolX)
@@ -583,7 +588,7 @@ int main(int argc, char** argv)
     FILE * outputFile = NULL;
     FILE * supportTextFile = NULL;
     double dbscale; // db unit to microns
-    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rN, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0;
+    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rN, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, rcx, rcy;
 
     long totalPoly = 0;
     unsigned char gdsPost[8];
@@ -613,11 +618,11 @@ int main(int argc, char** argv)
     int N = (int)(2*(rN - p)/lambda);
 
     //Compute dRN and dR1 to bound dose information
-    RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta);
-    RNp1        = secantSolve(sqrt((N+1)*lambda*f), 0, N + 1, p, q, 0, lambda, beta);
+    RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta, CRAAz);
+    RNp1        = secantSolve(sqrt((N+1)*lambda*f), 0, N + 1, p, q, 0, lambda, beta, CRAAz);
     dRN         = RNp1 - RN;
-    R1          = secantSolve(sqrt(lambda*f), 0, 1, p, q, 0, lambda, beta);
-    R2          = secantSolve(sqrt(2*lambda*f), 0, 2, p, q, 0, lambda, beta);
+    R1          = secantSolve(sqrt(lambda*f), 0, 1, p, q, 0, lambda, beta, CRAAz);
+    R2          = secantSolve(sqrt(2*lambda*f), 0, 2, p, q, 0, lambda, beta, CRAAz);
     dR1         = R2 - R1;
     maxDose     = dRN/(dRN - bias_um);
     minDose     = dR1/(dR1 - bias_um);
@@ -654,12 +659,13 @@ int main(int argc, char** argv)
     }
 
     long clockSpeed;
+    bool isGapZone = false;
     for (int n = 1; n <= N; n++){
         //Compute initial R at an arbitrary angle.  This will seed information regarding RoC for zone tol:
         rGuess     = sqrt(n*lambda*f);
         rGuessp1   = sqrt((n + 1)*lambda*f);
-        Rn         = secantSolve(rGuess, 0, n, p, q, 0, lambda, beta);
-        Rnp1       = secantSolve(rGuessp1, 0, n + 1, p, q, 0, lambda, beta);
+        Rn         = secantSolve(rGuess, 0, n, p, q, 0, lambda, beta, CRAAz);
+        Rnp1       = secantSolve(rGuessp1, 0, n + 1, p, q, 0, lambda, beta, CRAAz);
         dr         = Rnp1 - Rn;
         
         // Write to support text file
@@ -668,6 +674,7 @@ int main(int argc, char** argv)
     
         //If buttresses are specified, condition segment width on zone parity
         buttressWidth = 0;
+        // ButtressWidth is the width of the buttressed zone segment. Gap is the space in between - technically, the actual buttress
         switch (FSIdx){
             case 0:// % no buttresses
                 if (n % 2 == 0){
@@ -683,8 +690,13 @@ int main(int argc, char** argv)
                 break;
             case 2: // full zones + gaps
                 if (n % 2 == 0){ //% Even zones get gaps
+                    if (n == N) // Don't make last zone of gaps
+                        continue;
+                    
+                    isGapZone = true;
                     buttressWidth = dr*(buttressGapWidth);
                 }else{ //% Odd zones get Full zones
+                    isGapZone = false;
                     buttressWidth = 0;
                 }
                 break;
@@ -697,7 +709,7 @@ int main(int argc, char** argv)
     alphaBT = buttressWidth/Rn;
     
     // Set alpha to the tighter of the two constraints
-    if (buttressWidth != 0 && alphaBT < alphaZT)
+    if ( (buttressWidth != 0 && alphaBT < alphaZT) || isGapZone)
         alpha = alphaBT;
     else
         alpha = alphaZT;
@@ -738,7 +750,7 @@ int main(int argc, char** argv)
                 continue;
             }
         } else { // isomorphic case
-            if (!bIsInGeometry(cx, cy, obscurationSigma)){
+            if (!bIsInGeometry(cx, cy, obscurationSigma, CRA)){
                 currentAngle = currentAngle + alpha;
                 continue;
             }
@@ -746,17 +758,24 @@ int main(int argc, char** argv)
         
         
         // Apply custom mask
-        if (customMaskIdx != 0 && !bIsInCustomMask(cx, cy, customMaskIdx)){
-            currentAngle = currentAngle + alpha;
-            continue;
+        if (customMaskIdx != 0){
+            // Need to rotate coordinates based on CRAAz.  Unfortunately, custom masks here were designed with
+            // CRAAz = 90 in mind, so we need to rotate -90;
+            rcx = cx*cos(-CRAAz + M_PI_2) - cy*sin(-CRAAz + M_PI_2);
+            rcy = cx*sin(-CRAAz + M_PI_2) + cy*cos(-CRAAz + M_PI_2);
+            
+            if(!bIsInCustomMask(rcx, rcy, customMaskIdx)){
+                currentAngle = currentAngle + alpha;
+                continue;
+            }
         }
     
         // Compute phase terms
         phase = getPhaseTerm(cx, cy, orders, nZerns, ZPCPhase, ZPCR1, ZPCR2);
     
         // Use initial R as seeds for each subsequent compuptation of zone radii
-        Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta);
-        Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta);
+        Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta, CRAAz);
+        Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta, CRAAz);
         
         // Compute CM to optimized trap to arc and trap coords
         dr  = Rnp1 - Rn;
@@ -764,15 +783,24 @@ int main(int argc, char** argv)
         
         if (File_format == 0){ // ARC format
             doseBias = dr/(dr - bias_um); // Inverse of zone area bias
-            exportArc(Rn + bias_um/2, dr - bias_um, currentAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+            if (isGapZone){
+                exportArc(Rn - bias_um/2, dr + bias_um, currentAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+            } else {
+                exportArc(Rn + bias_um/2, dr - bias_um, currentAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+            }
         }
         else { // GDS or WRV format
             
             // recompute clockspeed, useful if zone width is varying by angle
             clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
             
-            tR1 = (RCM - dr/2)*1/cos(alpha/2) + bias_um/2;
-            tR2 = (RCM + dr/2)*1/cos(alpha/2) - bias_um/2;
+            if (isGapZone){
+                tR1 = (RCM - dr/2)*1/cos(alpha/2) - bias_um/2;
+                tR2 = (RCM + dr/2)*1/cos(alpha/2) + bias_um/2;
+            } else {
+                tR1 = (RCM - dr/2)*1/cos(alpha/2) + bias_um/2;
+                tR2 = (RCM + dr/2)*1/cos(alpha/2) - bias_um/2;
+            }
         
             long trapCoords[10];
             trapCoords[0] = (long) dbscale*(tR1*cos(currentAngle - alpha/2) + offsetX);
@@ -795,8 +823,9 @@ int main(int argc, char** argv)
         // Increment angle by amount depending on whether we require a gap or another trap to satisfy zTol requirement
         if (buttressWidth == 0){
             currentAngle = currentAngle + alpha;
-        }
-        else{
+        } else if (isGapZone){
+            currentAngle = currentAngle + dr*buttressPeriod/RCM;
+        } else{
             if (alphaBT > alphaZT){
                 if (arcStart < 0){ // This segment requires multipe traps to satsify ztol.  Start counting
                     arcStart = currentAngle; 

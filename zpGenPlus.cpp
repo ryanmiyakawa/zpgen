@@ -513,14 +513,39 @@ int main(int argc, char** argv)
     int IoP = atoi(*(argv_test++));
     //int zpID = atoi(*(argv_test++));
     int layerNumber = atoi(*(argv_test++));
-    bool curl_on = (bool) atoi(*(argv_test++));
+    bool curl_on = false;
+    int nwaUnitSelection = atoi(*(argv_test++));
     char * fileName = *argv_test;
     
     double lambda, bias_um;
     double NA_P = NA + sin(CRA);
     double D =  2 * (p*q / (p + q))*tan(asin(NA_P));
     
+    
     double nwaUnit = .004; // NWA unit for ARC file in [um/px]
+
+    switch (nwaUnitSelection){
+        case 0:
+            nwaUnit = .001; // not used
+            break;
+        case 1:
+             nwaUnit = .002;
+            break;
+        case 2:
+            nwaUnit = .0025;
+            break;
+        case 3:
+            nwaUnit = .004;
+            break;
+        case 4:
+            nwaUnit = .005;
+            break;
+        case 5:
+            nwaUnit = .008;
+            break;
+
+            
+    }
     
     lambda = lambda_nm / 1000;
     bias_um = bias_nm/1000;
@@ -779,6 +804,7 @@ int main(int argc, char** argv)
         dr  = Rnp1 - Rn;
         RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
         
+        // Rotate zone plate by CRA azimuth
         drawAngle = currentAngle + CRAAz;
         
         if (File_format == 0){ // ARC format

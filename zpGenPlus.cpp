@@ -523,25 +523,34 @@ int main(int argc, char** argv)
     
     
     double nwaUnit = .004; // NWA unit for ARC file in [um/px]
-
+    
     switch (nwaUnitSelection){
         case 0:
-            nwaUnit = .001; // not used
+            nwaUnit = 1; // not used
             break;
         case 1:
-             nwaUnit = .002;
+             nwaUnit = 0.00175;
             break;
         case 2:
-            nwaUnit = .0025;
+            nwaUnit = 0.002;
             break;
         case 3:
-            nwaUnit = .004;
+            nwaUnit = 0.0025;
             break;
         case 4:
-            nwaUnit = .005;
+            nwaUnit = 0.004;
             break;
         case 5:
-            nwaUnit = .008;
+            nwaUnit = 0.005;
+            break;
+        case 6:
+            nwaUnit = 0.006;
+            break;
+        case 7:
+            nwaUnit = 0.007;
+            break;
+        case 8:
+            nwaUnit = 0.008;
             break;
 
             
@@ -609,6 +618,10 @@ int main(int argc, char** argv)
         return 0;
         
     }
+    if (nwaUnitSelection > 0){
+        printf("NWA unit selection is %d with value %0.5f.\n", nwaUnitSelection, nwaUnit);
+    }
+
     
     /*************************/
     // BEGIN NEW ZP CODE:

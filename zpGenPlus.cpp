@@ -5,7 +5,7 @@
 //  Created by Ryan Miyakawa on 2/17/17.
 //  Copyright © 2017 Ryan Miyakawa and Henry Wang. All rights reserved.
 //
-// Refactoring ZPGen for speed and accuracy improvements.  Goal is to make zone plate GDS file generation take less than 5 seconds each
+// Refactoring ZPGen for speed and accuracy improvements.
 
 #include <stdio.h>
 #include <fstream>

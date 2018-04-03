@@ -718,19 +718,19 @@ int main(int argc, char** argv)
         // ButtressWidth is the width of the buttressed zone segment. Gap is the space in between - technically, the actual buttress
         switch (FSIdx){
             case 0:// % no buttresses
-                if (n % 2 == 0){
+                if (n % 2 == Opposite_Tone){
                     continue;
                 }
                 buttressWidth = 0;
                 break;
             case 1:// % gapped zones
-                if (n % 2 == 0){
+                if (n % 2 == Opposite_Tone){
                     continue;
                 }
                 buttressWidth = dr*(buttressPeriod - buttressGapWidth);
                 break;
             case 2: // full zones + gaps
-                if (n % 2 == 0){ //% Even zones get gaps
+                if (n % 2 == Opposite_Tone){ //% Even zones get gaps
                     if (n == N) // Don't make last zone of gaps
                         continue;
                     

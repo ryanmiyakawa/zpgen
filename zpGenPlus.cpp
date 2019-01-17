@@ -525,12 +525,8 @@ int main(int argc, char** argv)
     
     double lambda, bias_um;
     double NA_P = NA + sin(CRA);
-    double D;
-    if (p < q){
-        D = 2*p*tan(asin(NA_P));
-    } else {
-        D = 2*q*tan(asin(NA_P));
-    }
+    double D = 2*p*tan(asin(NA_P));
+    
     
     
     double nwaUnit = .004; // NWA unit for ARC file in [um/px]
@@ -600,9 +596,9 @@ int main(int argc, char** argv)
         printf("Print in opposie tone!");
     }
     int wrv_split;
-    if (D >= 400 && File_format == 3 && CRA == 0) {
+    if (D >= 500 && File_format == 3 && layerNumber == 1) {
         wrv_split = 1;
-        printf("On-axis Zoneplate is larger than WRV block size, split into 9 different blocks/files");
+        printf("Warning: WRV is overrunning blocksize");
     }
     printf("\n");
     
@@ -641,7 +637,7 @@ int main(int argc, char** argv)
     FILE * supportTextFile = NULL;
     double dbscale = 0; // db unit to microns
     int numBlocksOnSide = 1;
-    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rN, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
+    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rNp, rNq, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
 
     long totalPoly = 0;
     unsigned char gdsPost[8];
@@ -653,9 +649,10 @@ int main(int argc, char** argv)
     f   = 1/(1/p + 1/q);
     pNA = NA + sin(CRA);
     RN  = p * tan(asin(pNA));    // R in plane of ZP
-    rN  = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and f
-    zpCenterX = f*tan(CRA)*cos(CRAAz);
-    zpCenterY = f*tan(CRA)*sin(CRAAz);
+    rNp  = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and p
+    rNq  = sqrt(RN*RN + q*q);     // r is hypotenuse of RN and p
+    zpCenterX = -p*tan(CRA)*sin(CRAAz);
+    zpCenterY = p*tan(CRA)*cos(CRAAz);
     
     if (setToCenter){
         offsetX = -zpCenterX;
@@ -670,7 +667,7 @@ int main(int argc, char** argv)
 
     
     //Compute number of zones in this zone plate using RN path length difference
-    int N = (int)(2*(rN - p)/lambda);
+    int N = 2*(int)((rNp - p + rNq - q)/lambda);
 
     //Compute dRN and dR1 to bound dose information
     RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta);

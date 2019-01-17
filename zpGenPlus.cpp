@@ -375,6 +375,12 @@ double getDoseFromBias(double dr, double bias){
 long getPolyClockSpeed(double dR1, double dRN, double dRn, double bias){
     double maxClockSpeed = (dRN - bias)/dRN;
     double minClockSpeed = (dR1 - bias)/dR1;
+    
+    // True when bias = 0, so set all doses to maximum dose
+    if (maxClockSpeed == minClockSpeed){
+        return (long) 65535;
+    }
+    
     double thisClockSpeed = (dRn - bias)/dRn;
     
     return (long) ((maxClockSpeed - thisClockSpeed)/(maxClockSpeed - minClockSpeed) * 65535);
@@ -519,7 +525,12 @@ int main(int argc, char** argv)
     
     double lambda, bias_um;
     double NA_P = NA + sin(CRA);
-    double D =  2 * (p*q / (p + q))*tan(asin(NA_P));
+    double D;
+    if (p < q){
+        D = 2*p*tan(asin(NA_P));
+    } else {
+        D = 2*q*tan(asin(NA_P));
+    }
     
     
     double nwaUnit = .004; // NWA unit for ARC file in [um/px]
@@ -629,6 +640,7 @@ int main(int argc, char** argv)
     FILE * outputFile = NULL;
     FILE * supportTextFile = NULL;
     double dbscale = 0; // db unit to microns
+    int numBlocksOnSide = 1;
     double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rN, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
 
     long totalPoly = 0;
@@ -650,8 +662,10 @@ int main(int argc, char** argv)
         offsetY = -zpCenterY;
     }
     if (File_format == 3) { // WRV: shift by one half block size
-        offsetX += block_size*block_unit_size_pm / 2 / 1000000;
-        offsetY += block_size*block_unit_size_pm / 2 / 1000000;
+        numBlocksOnSide = layerNumber; // For WRV files we send num blocks on the GDSLayer input
+
+        offsetX += numBlocksOnSide*block_size*block_unit_size_pm / 2 / 1000000;
+        offsetY += numBlocksOnSide*block_size*block_unit_size_pm / 2 / 1000000;
     }
 
     

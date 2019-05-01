@@ -306,6 +306,13 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx){
                     cx*cx + cy*cy > square(.1);
         case 11: // square aperture
             return abs(cx) <= 1/sqrt(2) && abs(cy) <= 1/sqrt(2);
+            break;
+        case 12: // Horizontal strip:
+            return abs(cx) <= 1 && abs(cy) <= 0.15;
+            break;
+        case 13: // Vertical strip:
+            return abs(cy) <= 1 && abs(cx) <= 0.15;
+            break;
     }
     return true;
 }

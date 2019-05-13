@@ -308,14 +308,39 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx){
             return abs(cx) <= 1/sqrt(2) && abs(cy) <= 1/sqrt(2);
             break;
         case 12: // Horizontal strip:
-            return abs(cx) <= 1 && abs(cy) <= 0.15;
+            return abs(cx) <= 1 && abs(cy) <= 0.15 && !(abs(cx) <= 0.15 && abs(cx) >= 0.10);
             break;
         case 13: // Vertical strip:
-            return abs(cy) <= 1 && abs(cx) <= 0.15;
+            return abs(cy) <= 1 && abs(cx) <= 0.15 && !(abs(cy) <= 0.15 && abs(cy) >= 0.10);
             break;
     }
     return true;
 }
+
+// double customPhase(double cx, double cy, int customMaskIdx){
+//     switch (customMaskIdx){
+//         case 1: 
+//         case 2: 
+//         case 3: 
+//         case 4: 
+//         case 5: 
+//         case 6: 
+//         case 7: 
+//         case 8: 
+//         case 9: 
+//         case 10: 
+//         case 11: 
+//             return 0;
+//         case 12: // Horizontal strip:
+//             if (abs(cx) <= 0.15)
+//             return abs(cx) <= 1 && abs(cy) <= 0.15;
+//             break;
+//         case 13: // Vertical strip:
+//             return abs(cy) <= 1 && abs(cx) <= 0.15;
+//             break;
+//     }
+//     return true;
+// }
 
 bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double obscurationSigma){
     

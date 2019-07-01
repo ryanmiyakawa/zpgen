@@ -15,14 +15,11 @@
 
 using namespace std;
 
-// Recursively computes the binomial coefficient nCk:
-double nChooseK(double n, double k) {
-    if (k == 0 && n >= 0)
+int nChooseK(int n, int k){
+    if (k == 0) {
         return 1;
-    else if (n == 0 && k > 0)
-        return 0;
-    else
-        return nChooseK(n - 1, k - 1) + nChooseK(n - 1, k);
+    }
+    return (n * nChooseK(n - 1, k - 1)) / k;
 }
 
 // Retrieves the value the Zernike Polynomial order J at the coordinate [r, th]:
@@ -63,8 +60,8 @@ double zgenpt(int j, double r, double th) {
         else
             kParity = 1;
         
-        Rv += kParity*nChooseK((double)(n - k), (double)k)
-            *nChooseK((double)(n - 2 * k), (double)(p - k))
+        Rv += ((double)(kParity*nChooseK((n - k), k)
+            *nChooseK((n - 2 * k), (p - k))))
             *pow(r, (double)(n - 2 * k));
     }
 
@@ -308,39 +305,38 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx){
             return abs(cx) <= 1/sqrt(2) && abs(cy) <= 1/sqrt(2);
             break;
         case 12: // Horizontal strip:
-            return abs(cx) <= 1 && abs(cy) <= 0.15 && !(abs(cx) <= 0.15 && abs(cx) >= 0.10);
+            return abs(cx) <= 1 && abs(cy) <= 0.085 && !(abs(cx) <= 0.11 && abs(cx) >= 0.10);
             break;
         case 13: // Vertical strip:
-            return abs(cy) <= 1 && abs(cx) <= 0.15 && !(abs(cy) <= 0.15 && abs(cy) >= 0.10);
+            return abs(cy) <= 1 && abs(cx) <= 0.085 && !(abs(cy) <= 0.11 && abs(cy) >= 0.10);
             break;
     }
     return true;
 }
 
-// double customPhase(double cx, double cy, int customMaskIdx){
-//     switch (customMaskIdx){
-//         case 1: 
-//         case 2: 
-//         case 3: 
-//         case 4: 
-//         case 5: 
-//         case 6: 
-//         case 7: 
-//         case 8: 
-//         case 9: 
-//         case 10: 
-//         case 11: 
-//             return 0;
-//         case 12: // Horizontal strip:
-//             if (abs(cx) <= 0.15)
-//             return abs(cx) <= 1 && abs(cy) <= 0.15;
-//             break;
-//         case 13: // Vertical strip:
-//             return abs(cy) <= 1 && abs(cx) <= 0.15;
-//             break;
-//     }
-//     return true;
-// }
+double customPhase(double cx, double cy, int customMaskIdx){
+    switch (customMaskIdx){
+        case 1: 
+        case 2: 
+        case 3: 
+        case 4: 
+        case 5: 
+        case 6: 
+        case 7: 
+        case 8: 
+        case 9: 
+        case 10: 
+        case 11: 
+        case 12: 
+        case 13: 
+            return 0;
+
+        case 14: // spiral phase:
+            return atan2(cy, cx);
+
+    }
+    return true;
+}
 
 bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double obscurationSigma){
     
@@ -849,8 +845,9 @@ int main(int argc, char** argv)
             }
         }
     
-        // Compute phase terms
+        // Compute phase terms in waves
         phase = getPhaseTerm(cx, cy, orders, nZerns, ZPCPhase, ZPCR1, ZPCR2);
+        phase += customPhase(cx, cy, customMaskIdx)/(2*M_PI);
     
         // Use initial R as seeds for each subsequent compuptation of zone radii
         Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta);

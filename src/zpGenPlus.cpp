@@ -305,10 +305,14 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx){
             return abs(cx) <= 1/sqrt(2) && abs(cy) <= 1/sqrt(2);
             break;
         case 12: // Horizontal strip:
-            return abs(cx) <= 1 && abs(cy) <= 0.085 && !(abs(cx) <= 0.11 && abs(cx) >= 0.10);
+            return abs(cx) <= 1 && abs(cy) <= 0.1 && !(abs(cx) <= 0.105 && abs(cx) >= 0.085);
             break;
         case 13: // Vertical strip:
-            return abs(cy) <= 1 && abs(cx) <= 0.085 && !(abs(cy) <= 0.11 && abs(cy) >= 0.10);
+            return abs(cy) <= 1 && abs(cx) <= 0.1 && !(abs(cy) <= 0.105 && abs(cy) >= 0.085);
+            break;
+        case 15: // Black ring:
+            r = sqrt(cx*cx + cy*cy);
+            return (r <= 1) && (r >= 0.105 || r <= 0.085);
             break;
     }
     return true;
@@ -371,7 +375,7 @@ double objectiveFn(double r, double th, double N, double p, double q,
 
 double secantSolve(double dRGuess, double th, double N, double p, double q, double phase, double lambda, double beta){
     double tolX = 0.00001;
-    int maxIter = 20;
+    int maxIter = 50;
     
     //Make guesses:
     double x1, x2, fxm1, fxm2, R0;

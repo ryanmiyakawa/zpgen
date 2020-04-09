@@ -6,6 +6,8 @@
 //  Copyright © 2017 Ryan Miyakawa and Henry Wang. All rights reserved.
 //
 // Refactoring ZPGen for speed and accuracy improvements.
+//
+// 
 
 #include <stdio.h>
 #include <fstream>
@@ -859,7 +861,9 @@ int main(int argc, char** argv)
         
         // Compute CM to optimized trap to arc and trap coords
         dr  = Rnp1 - Rn;
-        RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
+
+        RCM = 2/3*(Rnp1*Rnp1*Rnp1 - Rn*Rn*Rn)/(Rnp1*Rnp1 - Rn*Rn)*sin(alpha)/alpha; // CM of finite arc = 2/3*sin(al)/al * (r2^3 - r1^3)/(r2^2 - r1^2)
+        //RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
         
         // Rotate zone plate by CRA azimuth
         drawAngle = currentAngle + CRAAz;

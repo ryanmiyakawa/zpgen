@@ -414,8 +414,25 @@ long getPolyClockSpeed(double dR1, double dRN, double dRn, double bias){
     }
     
     double thisClockSpeed = (dRn - bias)/dRn;
+
+    // Require thisClockSpeed to be within bounds (inequalities are backward due to definition)
+    if (thisClockSpeed > minClockSpeed){
+        thisClockSpeed = minClockSpeed;
+    }
+    if (thisClockSpeed < maxClockSpeed){
+        thisClockSpeed = maxClockSpeed;
+    }
+
+
+    long clockSpeed = (long) ((maxClockSpeed - thisClockSpeed)/(maxClockSpeed - minClockSpeed) * 65535);
     
-    return (long) ((maxClockSpeed - thisClockSpeed)/(maxClockSpeed - minClockSpeed) * 65535);
+    // if (clockSpeed < 0){
+    //     printf("WARNING: CLOCKSPEED NEGATIVE\n");
+    //     printf("dRN: %0.5f, dR1: %0.5f, dRn: %0.5f, bias: %0.3f\n", dRN, dR1, dRn, bias);
+    //     printf("maxClockSpeed: %0.5f, minClockSpeed: %0.5f, thisClockSpeed: %0.5f\n", maxClockSpeed, minClockSpeed, thisClockSpeed);
+    // }
+
+    return clockSpeed;
 }
 
 void writeSupportTxtHeader(double dR1, double dRN, double bias, FILE * supportTextFile){
@@ -497,6 +514,8 @@ void notifyJoanie(float progress, int zpID){
 int main(int argc, char** argv)
 {
     clock_t begin = clock();
+    printf("\nUsing new RCM framework\n");
+
     
     if (argc == 1) {
         printf("No input parameters!!! \n");
@@ -597,6 +616,7 @@ int main(int argc, char** argv)
     
     lambda = lambda_nm / 1000;
     bias_um = bias_nm/1000;
+    
     
     printf("\nCreating zone plate:\nNA_P \t\t\t= %0.3f\n", NA_P);
     printf("NA_child \t\t= %f \n", NA);
@@ -859,7 +879,8 @@ int main(int argc, char** argv)
         
         // Compute CM to optimized trap to arc and trap coords
         dr  = Rnp1 - Rn;
-        RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
+        RCM = (Rnp1*Rnp1*Rnp1 - Rn*Rn*Rn) / (Rnp1*Rnp1 - Rn*Rn)  * 2/3 * sin(alpha)/alpha;
+        //RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
         
         // Rotate zone plate by CRA azimuth
         drawAngle = currentAngle + CRAAz;

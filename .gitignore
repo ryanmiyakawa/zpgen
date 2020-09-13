@@ -1,3 +1,4 @@
 .vscode/*
 *.gds
 *.wrv
+test-scripts/test-files/*

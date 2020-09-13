@@ -314,6 +314,10 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx){
             r = sqrt(cx*cx + cy*cy);
             return (r <= 1) && (r >= 0.105 || r <= 0.085);
             break;
+
+        case 16: // obscuration only
+            return 0;
+
     }
     return true;
 }
@@ -633,24 +637,24 @@ int main(int argc, char** argv)
     printf("tilted angle beta \t= %g in radian\n", beta);
     printf("Max zone phase error\t= lambda/%d\n", (int)(1 / zTol));
     printf("Zone plate diameter \t= %0.2f um\n", D);
-    printf("Extra Phase shift \t= %f in Radian\n", ZPCPhase);
+    printf("ZPC phase shift \t= %f in radians\n", ZPCPhase);
     printf("Apodized term \t\t= %f %% transmission\n", APD * 100);
     if (APD_window != 0) {
         printf("Apodized window \t= %f \n", APD_window);
     }
-    printf("Bias term \t\t= %f nm\n", bias_nm);
-    printf("Free Standing \t\t= %d \n", FSIdx);
+    printf("Zone width bias \t\t= %f nm\n", bias_nm);
+    printf("Is Free Standing? \t\t= %d \n", FSIdx);
     printf("W\t\t\t= %f dr \n", buttressGapWidth);
     printf("T\t\t\t= %f dr \n", buttressPeriod);
-    printf("Block sieze for wrv file: %ld\n", block_size);
-    printf("Generate %d part out of total %d parts.\n", IoP, NoP);
+    printf("Block size for wrv file: %ld\n", block_size);
+    printf("Generating partial %d of total %d total.\n", IoP, NoP);
     if (Opposite_Tone == 1) {
-        printf("Print in opposie tone!");
+        printf("Tone swapped");
     }
     int wrv_split;
     if (D >= 500 && File_format == 3 && layerNumber == 1) {
         wrv_split = 1;
-        printf("Warning: WRV is overrunning blocksize");
+        printf("WARNING: WRV is overrunning blocksize");
     }
     printf("\n");
     
@@ -698,13 +702,13 @@ int main(int argc, char** argv)
     unsigned char polyForm[4];
     
     /* Figure out number of zones by counting the number of waves that separate rN and f */
-    f   = 1/(1/p + 1/q);
-    pNA = NA + sin(CRA);
-    RN  = p * tan(asin(pNA));    // R in plane of ZP
-    rNp  = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and p
-    rNq  = sqrt(RN*RN + q*q);     // r is hypotenuse of RN and p
-    zpCenterX = -p*tan(CRA)*sin(CRAAz);
-    zpCenterY = p*tan(CRA)*cos(CRAAz);
+    f           = 1/(1/p + 1/q);
+    pNA         = NA + sin(CRA);
+    RN          = p * tan(asin(pNA));    // R in plane of ZP
+    rNp         = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and p
+    rNq         = sqrt(RN*RN + q*q);     // r is hypotenuse of RN and p
+    zpCenterX   = -p*tan(CRA)*sin(CRAAz);
+    zpCenterY   = p*tan(CRA)*cos(CRAAz);
     
     if (setToCenter){
         offsetX = -zpCenterX;
@@ -718,10 +722,10 @@ int main(int argc, char** argv)
     }
 
     
-    //Compute number of zones in this zone plate using RN path length difference
+    // Compute number of zones in this zone plate using RN path length difference
     int N = 2*(int)((rNp - p + rNq - q)/lambda);
 
-    //Compute dRN and dR1 to bound dose information
+    // Compute dRN and dR1 to bound dose information
     RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta);
     RNp1        = secantSolve(sqrt((N+1)*lambda*f), 0, N + 1, p, q, 0, lambda, beta);
     dRN         = RNp1 - RN;
@@ -764,6 +768,12 @@ int main(int argc, char** argv)
 
     long clockSpeed;
     bool isGapZone = false;
+
+    // If we're printing obscuration only, then set N to 0:
+    if (customMaskIdx == 16){
+        N = 0;
+    }
+
     for (int n = 1; n <= N; n++){
         //Compute initial R at an arbitrary angle.  This will seed information regarding RoC for zone tol:
         rGuess     = sqrt(n*lambda*f);
@@ -776,7 +786,7 @@ int main(int argc, char** argv)
         clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
         if (File_format == 2) writeSupportTxtZoneDose(clockSpeed, n, Rn, supportTextFile);
     
-        //If buttresses are specified, condition segment width on zone parity
+        // If buttresses are specified, condition segment width on zone parity
         buttressWidth = 0;
         // ButtressWidth is the width of the buttressed zone segment. Gap is the space in between - technically, the actual buttress
         switch (FSIdx){
@@ -806,149 +816,152 @@ int main(int argc, char** argv)
                 break;
         }
     
-    /* We can comply with zone tol constraint by leveraging the radius of curvature of the present zone programmatically. */
-    alphaZT = 2*acos(1/(zTol * lambda / Rn + 1)); // Full angle subtended by valid arc segment
-    
-    // Compare with full angle specified by buttress width
-    alphaBT = buttressWidth/Rn;
-    
-    // Set alpha to the tighter of the two constraints
-    if ( (buttressWidth != 0 && alphaBT < alphaZT) || isGapZone)
-        alpha = alphaBT;
-    else
-        alpha = alphaZT;
-    
-    //For dealing with mixed conditions above
-    arcStart = -1;
-    
-    // Log trap count:
-    long trapCount = 0;
-    
-    //Loop through angle
-    startAngle     = ((double) (rand() % 1000))/1000 * 2 * M_PI ; // randomize start
-    currentAngle = startAngle;
-    
-    while(true){
-        if (currentAngle >= startAngle + 2 * M_PI){
-            break;
-        }
-        // Get relative coordinates
-        x = Rn*cos(currentAngle);
-        y = Rn*sin(currentAngle);
-    
-        // Convert coordinates to pupil coordinates
-        if (CRA == 0){
-            cx = sin(atan(x/p))/NA;
-            cy = sin(atan(y/p))/NA;
-        }
-        else{
-            cx = (sin(atan(x/p)))/NA;
-            cy = (sin(atan(y/p)) - sin(CRA))/NA;
-        }
-    
+        /* We can comply with zone tol constraint by leveraging the radius of curvature of the present zone programmatically. */
+        alphaZT = 2*acos(1/(zTol * lambda / Rn + 1)); // Full angle subtended by valid arc segment
         
-        // Accept or reject trap based on pupil boundaries and obscuration
-        if (anamorphicFac != 1 && anamorphicFac > 0){ // Anamorphic case
-            if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)){
-                currentAngle = currentAngle + alpha;
-                continue;
+        // Compare with full angle specified by buttress width
+        alphaBT = buttressWidth/Rn;
+        
+        // Set alpha to the tighter of the two constraints
+        if ( (buttressWidth != 0 && alphaBT < alphaZT) || isGapZone)
+            alpha = alphaBT;
+        else
+            alpha = alphaZT;
+        
+        //For dealing with mixed conditions above
+        arcStart = -1;
+        
+        // Log trap count:
+        long trapCount = 0;
+        
+        //Loop through angle
+        startAngle     = ((double) (rand() % 1000))/1000 * 2 * M_PI ; // randomize start
+        currentAngle = startAngle;
+        
+        while(true){
+            if (currentAngle >= startAngle + 2 * M_PI){
+                break;
             }
-        } else { // isomorphic case
-            if (!bIsInGeometry(cx, cy, obscurationSigma, CRA)){
-                currentAngle = currentAngle + alpha;
-                continue;
+            // Get relative coordinates
+            x = Rn*cos(currentAngle);
+            y = Rn*sin(currentAngle);
+        
+            // Convert coordinates to pupil coordinates
+            /**
+             *  For tilted zone plates we do the transfromation:
+             *      x => x cos(beta)
+             *      p => p - x sin(beta)
+             */
+
+            cx = sin(atan(x*cos(beta)/(p - x*sin(beta))))/NA;
+            cy = sin(atan(y/(p - x*sin(beta))))/NA;
+            if (CRA != 0){
+                cy -= sin(CRA)/NA;
             }
-        }
         
-        
-        // Apply custom mask
-        if (customMaskIdx != 0){
-            if(!bIsInCustomMask(cx, cy, customMaskIdx)){
-                currentAngle = currentAngle + alpha;
-                continue;
-            }
-        }
-    
-        // Compute phase terms in waves
-        phase = getPhaseTerm(cx, cy, orders, nZerns, ZPCPhase, ZPCR1, ZPCR2);
-        phase += customPhase(cx, cy, customMaskIdx)/(2*M_PI);
-    
-        // Use initial R as seeds for each subsequent compuptation of zone radii
-        Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta);
-        Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta);
-        
-        // Compute CM to optimized trap to arc and trap coords
-        dr  = Rnp1 - Rn;
-        RCM = (Rnp1*Rnp1*Rnp1 - Rn*Rn*Rn) / (Rnp1*Rnp1 - Rn*Rn)  * 2/3 * sin(alpha)/alpha;
-        //RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
-        
-        // Rotate zone plate by CRA azimuth
-        drawAngle = currentAngle + CRAAz;
-        
-        if (File_format == 0){ // ARC format
-            doseBias = dr/(dr - bias_um); // Inverse of zone area bias
-            if (isGapZone){
-                exportArc(Rn - bias_um/2, dr + bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
-            } else {
-                exportArc(Rn + bias_um/2, dr - bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
-            }
-        }
-        else { // GDS or WRV format
             
-            // recompute clockspeed, useful if zone width is varying by angle
-            clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
-            
-            if (isGapZone){
-                tR1 = (RCM - dr/2)*1/cos(alpha/2) - bias_um/2;
-                tR2 = (RCM + dr/2)*1/cos(alpha/2) + bias_um/2;
-            } else {
-                tR1 = (RCM - dr/2)*1/cos(alpha/2) + bias_um/2;
-                tR2 = (RCM + dr/2)*1/cos(alpha/2) - bias_um/2;
-            }
-        
-            long trapCoords[10];
-            trapCoords[0] = (long) dbscale*(tR1*cos(drawAngle - alpha/2) + offsetX);
-            trapCoords[1] = (long) dbscale*(tR1*sin(drawAngle - alpha/2) + offsetY);
-            trapCoords[2] = (long) dbscale*(tR1*cos(drawAngle + alpha/2) + offsetX);
-            trapCoords[3] = (long) dbscale*(tR1*sin(drawAngle + alpha/2) + offsetY);
-            trapCoords[4] = (long) dbscale*(tR2*cos(drawAngle + alpha/2) + offsetX);
-            trapCoords[5] = (long) dbscale*(tR2*sin(drawAngle + alpha/2) + offsetY);
-            trapCoords[6] = (long) dbscale*(tR2*cos(drawAngle - alpha/2) + offsetX);
-            trapCoords[7] = (long) dbscale*(tR2*sin(drawAngle - alpha/2) + offsetY);
-            trapCoords[8] = (long) dbscale*(tR1*cos(drawAngle - alpha/2) + offsetX);
-            trapCoords[9] = (long) dbscale*(tR1*sin(drawAngle - alpha/2) + offsetY);
-        
-            // Export shape
-            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed);
-        }
-    
-        trapCount++;
-    
-        // Increment angle by amount depending on whether we require a gap or another trap to satisfy zTol requirement
-        if (buttressWidth == 0){
-            currentAngle = currentAngle + alpha;
-        } else if (isGapZone){
-            currentAngle = currentAngle + dr*buttressPeriod/RCM;
-        } else{
-            if (alphaBT > alphaZT){
-                if (arcStart < 0){ // This segment requires multipe traps to satsify ztol.  Start counting
-                    arcStart = currentAngle; 
-                }
-                if ((currentAngle - arcStart + alpha) > alphaBT){ // Require a gap here, reset counter
-                    currentAngle = currentAngle + alpha + dr*buttressGapWidth/RCM;
-                    arcStart = -1;
-                }
-                else{ // keep adding traps in this segment
+            // Accept or reject trap based on pupil boundaries and obscuration
+            if (anamorphicFac != 1 && anamorphicFac > 0){ // Anamorphic case
+                if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)){
                     currentAngle = currentAngle + alpha;
+                    continue;
+                }
+            } else { // isomorphic case
+                if (!bIsInGeometry(cx, cy, obscurationSigma, CRA)){
+                    currentAngle = currentAngle + alpha;
+                    continue;
                 }
             }
-            else{
-                currentAngle = currentAngle + dr*buttressPeriod/RCM; // This segment satisfies ztol
+            
+            
+            // Apply custom mask
+            if (customMaskIdx != 0){
+                if(!bIsInCustomMask(cx, cy, customMaskIdx)){
+                    currentAngle = currentAngle + alpha;
+                    continue;
+                }
             }
-        }
         
-        }
+            // Compute phase terms in waves
+            phase = getPhaseTerm(cx, cy, orders, nZerns, ZPCPhase, ZPCR1, ZPCR2);
+            phase += customPhase(cx, cy, customMaskIdx)/(2*M_PI);
         
+            // Use initial R as seeds for each subsequent compuptation of zone radii
+            Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta);
+            Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta);
+            
+            // Compute CM to optimized trap to arc and trap coords
+            dr  = Rnp1 - Rn;
+            RCM = (Rnp1*Rnp1*Rnp1 - Rn*Rn*Rn) / (Rnp1*Rnp1 - Rn*Rn)  * 2/3 * sin(alpha)/alpha;
+            //RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
+            
+            // Rotate zone plate by CRA azimuth
+            drawAngle = currentAngle + CRAAz;
+            
+            if (File_format == 0){ // ARC format
+                doseBias = dr/(dr - bias_um); // Inverse of zone area bias
+                if (isGapZone){
+                    exportArc(Rn - bias_um/2, dr + bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+                } else {
+                    exportArc(Rn + bias_um/2, dr - bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+                }
+            }
+            else { // GDS or WRV format
+                
+                // recompute clockspeed, useful if zone width is varying by angle
+                clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
+                
+                if (isGapZone){
+                    tR1 = (RCM - dr/2)*1/cos(alpha/2) - bias_um/2;
+                    tR2 = (RCM + dr/2)*1/cos(alpha/2) + bias_um/2;
+                } else {
+                    tR1 = (RCM - dr/2)*1/cos(alpha/2) + bias_um/2;
+                    tR2 = (RCM + dr/2)*1/cos(alpha/2) - bias_um/2;
+                }
+            
+                long trapCoords[10];
+                trapCoords[0] = (long) dbscale*(tR1*cos(drawAngle - alpha/2) + offsetX);
+                trapCoords[1] = (long) dbscale*(tR1*sin(drawAngle - alpha/2) + offsetY);
+                trapCoords[2] = (long) dbscale*(tR1*cos(drawAngle + alpha/2) + offsetX);
+                trapCoords[3] = (long) dbscale*(tR1*sin(drawAngle + alpha/2) + offsetY);
+                trapCoords[4] = (long) dbscale*(tR2*cos(drawAngle + alpha/2) + offsetX);
+                trapCoords[5] = (long) dbscale*(tR2*sin(drawAngle + alpha/2) + offsetY);
+                trapCoords[6] = (long) dbscale*(tR2*cos(drawAngle - alpha/2) + offsetX);
+                trapCoords[7] = (long) dbscale*(tR2*sin(drawAngle - alpha/2) + offsetY);
+                trapCoords[8] = (long) dbscale*(tR1*cos(drawAngle - alpha/2) + offsetX);
+                trapCoords[9] = (long) dbscale*(tR1*sin(drawAngle - alpha/2) + offsetY);
+            
+                // Export shape
+                exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed);
+            }
+        
+            trapCount++;
+        
+            // Increment angle by amount depending on whether we require a gap or another trap to satisfy zTol requirement
+            if (buttressWidth == 0){
+                currentAngle = currentAngle + alpha;
+            } else if (isGapZone){
+                currentAngle = currentAngle + dr*buttressPeriod/RCM;
+            } else{
+                if (alphaBT > alphaZT){
+                    if (arcStart < 0){ // This segment requires multipe traps to satsify ztol.  Start counting
+                        arcStart = currentAngle; 
+                    }
+                    if ((currentAngle - arcStart + alpha) > alphaBT){ // Require a gap here, reset counter
+                        currentAngle = currentAngle + alpha + dr*buttressGapWidth/RCM;
+                        arcStart = -1;
+                    }
+                    else{ // keep adding traps in this segment
+                        currentAngle = currentAngle + alpha;
+                    }
+                }
+                else{
+                    currentAngle = currentAngle + dr*buttressPeriod/RCM; // This segment satisfies ztol
+                }
+            }
+            
+        } // End angle loop
+            
         totalPoly += trapCount;
         if (File_format == 0){ // ARC format
             printf("Finished zone %d with %ld arcs\n", n, trapCount);
@@ -960,6 +973,81 @@ int main(int argc, char** argv)
             notifyJoanie(progress, 1);
         }
         
+    } // End zone loop
+
+
+    // Write obscuration.  Note: cannot write obscuration in arcs presently
+    if (Opposite_Tone && obscurationSigma > 0 && File_format != 0){
+        printf("Writing obscuration with sigma %0.2f\n", obscurationSigma);
+
+
+        double qa, qb, qc, qal, qxm, qxp, qxstart, qxend, qxrange, qxstep;
+        int nObsPts = 360;
+
+        /**
+         * Solve for the x-bounds on the obscuration.
+         * Solution is analytic and can be described in the google doc:
+         * "SERM ZP Tilt notes"
+         */
+
+        qal = asin(NA*obscurationSigma);
+
+        
+        // Solve quadratic to find x bounds:
+        qa = square(sin(beta))*square(tan(qal)) - square(cos(beta));
+        qb = -2*p*sin(beta)*square(tan(qal));
+        qc = square(p)*square(tan(qal));
+
+        qxm = (-qb + sqrt(square(qb) - 4*qa*qc))/(2*qa);
+        qxp = (-qb - sqrt(square(qb) - 4*qa*qc))/(2*qa);
+
+        printf("[NA, sigma] = [%0.3f, %0.3f]\n", NA, obscurationSigma);
+        printf("Obscuration [p, alpha] = [%0.3f, %0.3f]\n", p, qal);
+        printf("Obscuration quadtratic [A,B,C] = [%0.3f, %0.3f, %0.3f]\n", qa, qb, qc);
+        printf("Obscuration x-bounds solved as [%0.3f, %0.3f]\n", qxm, qxp);
+
+        // create an even grid between qxm and qxp:
+        qxstart = qxm ;
+        qxend   = qxp ;
+        qxrange = qxend - qxstart;
+        qxstep  = qxrange/(nObsPts/2 - 1);
+
+        double qXCoords[nObsPts];
+        double qYCoords[nObsPts];
+
+        // populate obscuration coordinates, spacing using cosine function
+        for (int k = 0; k < nObsPts/2; k++){
+            qXCoords[k] = qxstart + qxrange*(0.5 - 0.5*cos(2*M_PI*k/nObsPts));
+            qYCoords[k] = sqrt(square(qXCoords[k])*qa + qXCoords[k]*qb + qc);
+        }
+        for (int k = 0; k < nObsPts/2; k++){
+            qXCoords[k + nObsPts/2] =  qxend - qxrange*(0.5 - 0.5*cos(2*M_PI*k/nObsPts));
+            qYCoords[k + nObsPts/2] = -sqrt(square(qXCoords[k + nObsPts/2])*qa + qXCoords[k + nObsPts/2]*qb + qc);
+        }
+
+
+        for (int k = 0; k < (nObsPts/2 - 1); k++){
+
+            long trapCoords[10];
+            trapCoords[0] = (long) dbscale*(qXCoords[k]);
+            trapCoords[1] = (long) dbscale*(qYCoords[k]);
+
+            trapCoords[2] = (long) dbscale*(qXCoords[k + 1]);
+            trapCoords[3] = (long) dbscale*(qYCoords[k + 1]);
+
+            trapCoords[4] = (long) dbscale*(qXCoords[nObsPts - k - 2]);
+            trapCoords[5] = (long) dbscale*(qYCoords[nObsPts - k - 2]);
+
+            trapCoords[6] = (long) dbscale*(qXCoords[nObsPts - k - 1]);
+            trapCoords[7] = (long) dbscale*(qYCoords[nObsPts - k - 1]);
+
+            trapCoords[8] = (long) dbscale*(qXCoords[k]);
+            trapCoords[9] = (long) dbscale*(qYCoords[k]);
+        
+            // Export shape
+            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535);
+
+        }
     }
  
     

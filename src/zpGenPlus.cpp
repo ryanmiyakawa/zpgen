@@ -407,6 +407,29 @@ double getDoseFromBias(double dr, double bias){
     return dr/(dr - bias);
 }
 
+/**
+ * 
+ * 
+ * 
+ */
+void getZPCoordinatesFromFrequency(double kx, double ky, double P, double * coordinates, double NA, double beta){
+    // Define k-vector:
+    double kz = sqrt(1 - kx*kx - ky*ky);
+
+    double p0x = 0;
+    double p0y = 0;
+    double p0z = P;
+
+    double n0x = sin(beta);
+    double n0y = 0;
+    double n0z = cos(beta);
+
+    double d = (p0x*n0x + p0y*n0y + p0z*n0z)/(kx*n0x + ky*n0y + kz*n0z);
+
+    coordinates[0] = d * kx / cos(beta);
+    coordinates[1] = d * ky;
+}
+
 // Computes requisite clock speed to perform dose bias
 long getPolyClockSpeed(double dR1, double dRN, double dRn, double bias){
     double maxClockSpeed = (dRN - bias)/dRN;
@@ -991,7 +1014,8 @@ int main(int argc, char** argv)
          */
 
         qal = asin(NA*obscurationSigma);
-
+        double kx = NA*obscurationSigma*cos(theta) + sin(CRA);
+        double ky = NA*obscurationSigma*sin(theta);
         
         // Solve quadratic to find x bounds:
         qa = square(sin(beta))*square(tan(qal)) - square(cos(beta));
@@ -1026,23 +1050,25 @@ int main(int argc, char** argv)
         }
 
 
+        double azRot = CRAAz + M_PI/2;
         for (int k = 0; k < (nObsPts/2 - 1); k++){
+            totalPoly++;
 
             long trapCoords[10];
-            trapCoords[0] = (long) dbscale*(qXCoords[k]);
-            trapCoords[1] = (long) dbscale*(qYCoords[k]);
+            trapCoords[0] = (long) dbscale*(cos(azRot)*qXCoords[k] - sin(azRot) * qYCoords[k]);
+            trapCoords[1] = (long) dbscale*(sin(azRot)*qXCoords[k] + cos(azRot) * qYCoords[k]);
 
-            trapCoords[2] = (long) dbscale*(qXCoords[k + 1]);
-            trapCoords[3] = (long) dbscale*(qYCoords[k + 1]);
+            trapCoords[2] = (long) dbscale*(cos(azRot)*qXCoords[k+1] - sin(azRot) * qYCoords[k+1]);
+            trapCoords[3] = (long) dbscale*(sin(azRot)*qXCoords[k+1] + cos(azRot) * qYCoords[k+1]);
 
-            trapCoords[4] = (long) dbscale*(qXCoords[nObsPts - k - 2]);
-            trapCoords[5] = (long) dbscale*(qYCoords[nObsPts - k - 2]);
+            trapCoords[4] = (long) dbscale*(cos(azRot)*qXCoords[nObsPts - k - 2] - sin(azRot) * qYCoords[nObsPts - k - 2]);
+            trapCoords[5] = (long) dbscale*(sin(azRot)*qXCoords[nObsPts - k - 2] + cos(azRot) * qYCoords[nObsPts - k - 2]);
 
-            trapCoords[6] = (long) dbscale*(qXCoords[nObsPts - k - 1]);
-            trapCoords[7] = (long) dbscale*(qYCoords[nObsPts - k - 1]);
+            trapCoords[6] = (long) dbscale*(cos(azRot)*qXCoords[nObsPts - k - 1] - sin(azRot) * qYCoords[nObsPts - k - 1]);
+            trapCoords[7] = (long) dbscale*(sin(azRot)*qXCoords[nObsPts - k - 1] + cos(azRot) * qYCoords[nObsPts - k - 1]);
 
-            trapCoords[8] = (long) dbscale*(qXCoords[k]);
-            trapCoords[9] = (long) dbscale*(qYCoords[k]);
+            trapCoords[8] = (long) dbscale*(cos(azRot)*qXCoords[k] - sin(azRot) * qYCoords[k]);
+            trapCoords[9] = (long) dbscale*(sin(azRot)*qXCoords[k] + cos(azRot) * qYCoords[k]);
         
             // Export shape
             exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535);

@@ -412,7 +412,7 @@ double getDoseFromBias(double dr, double bias){
  * 
  * 
  */
-void getZPCoordinatesFromFrequency(double kx, double ky, double P, double * coordinates, double NA, double beta){
+void getZPCoordinatesFromFrequency(double kx, double ky, double P, double * coordinates, double beta){
     // Define k-vector:
     double kz = sqrt(1 - kx*kx - ky*ky);
 
@@ -420,14 +420,30 @@ void getZPCoordinatesFromFrequency(double kx, double ky, double P, double * coor
     double p0y = 0;
     double p0z = P;
 
-    double n0x = sin(beta);
-    double n0y = 0;
+    double n0x = 0;
+    double n0y = sin(beta);
     double n0z = cos(beta);
 
     double d = (p0x*n0x + p0y*n0y + p0z*n0z)/(kx*n0x + ky*n0y + kz*n0z);
 
-    coordinates[0] = d * kx / cos(beta);
-    coordinates[1] = d * ky;
+    coordinates[0] = d * kx;
+    coordinates[1] = d * ky / cos(beta);
+}
+
+void getPupilCoordinatesFromZPCoordinates(double x, double yp, double P, double * coordinates, double beta, double NA, double CRA){
+    // Transform [xp, yp, zp] to x-z rectilinear coords:
+
+    double y = yp*cos(beta);
+    double z = P - yp*sin(beta);
+
+    // [x,y,z] is then our k-vector, so normalize it:
+    double absK = sqrt(x*x + y*y + z*z);
+
+    double kx = x/absK;
+    double ky = y/absK;
+
+    coordinates[0] = kx/NA;
+    coordinates[1] = (ky - sin(CRA))/NA;
 }
 
 // Computes requisite clock speed to perform dose bias
@@ -570,36 +586,37 @@ int main(int argc, char** argv)
     double orders[2 * nZerns];
     for (int k = 0; k < nZerns; k++) {
         orders[k] = atof(*(argv_test++));
-        orders[k + nZerns] = atof(*(argv_test++));
+        orders[k + nZerns]  = atof(*(argv_test++));
     }
-    int customMaskIdx = atoi(*(argv_test++)); // Changed alpha to custom mask
-    double beta = atof(*(argv_test++));
-    double CRAAz = atof(*(argv_test++))* M_PI/180; // call in degrees
-    double CRA = atof(*(argv_test++)) * M_PI/180;  // call in degrees
-    double anamorphicFac = atof(*(argv_test++));
-    double ZPCPhase = atof(*(argv_test++));
-    double APD = atof(*(argv_test++));
-    double APD_window = atof(*(argv_test++));
-    double ZPCR2 = atof(*(argv_test++));
-    double ZPCR1 = atof(*(argv_test++));
-    double bias_nm = atof(*(argv_test++));
-    int File_format = atof(*(argv_test++));
-    int Opposite_Tone = atof(*(argv_test++));
-    int FSIdx = atof(*(argv_test++));
+
+    int customMaskIdx       = atoi(*(argv_test++)); // Changed alpha to custom mask
+    double beta             = atof(*(argv_test++));
+    double CRAAz            = atof(*(argv_test++))* M_PI/180; // call in degrees
+    double CRA              = atof(*(argv_test++)) * M_PI/180;  // call in degrees
+    double anamorphicFac    = atof(*(argv_test++));
+    double ZPCPhase         = atof(*(argv_test++));
+    double APD              = atof(*(argv_test++));
+    double APD_window       = atof(*(argv_test++));
+    double ZPCR2            = atof(*(argv_test++));
+    double ZPCR1            = atof(*(argv_test++));
+    double bias_nm          = atof(*(argv_test++));
+    int File_format         = atof(*(argv_test++));
+    int Opposite_Tone       = atof(*(argv_test++));
+    int FSIdx               = atof(*(argv_test++));
     double buttressGapWidth = atof(*(argv_test++));
-    double buttressPeriod = atof(*(argv_test++));
-    int setToCenter = atoi(*(argv_test++));
+    double buttressPeriod   = atof(*(argv_test++));
+    int setToCenter         = atoi(*(argv_test++));
     //1 million pixel with a pixel size 500 pm (0.5 nm)
     // Thus it transfer to 500 um block size
-    long block_size = atol(*(argv_test++));
+    long block_size         = atol(*(argv_test++));
     long block_unit_size_pm = 500;
-    int NoP = atoi(*(argv_test++));
-    int IoP = atoi(*(argv_test++));
+    int NoP                 = atoi(*(argv_test++));
+    int IoP                 = atoi(*(argv_test++));
     //int zpID = atoi(*(argv_test++));
-    int layerNumber = atoi(*(argv_test++));
-    bool curl_on = false;
-    int nwaUnitSelection = atoi(*(argv_test++));
-    char * fileName = *argv_test;
+    int layerNumber         = atoi(*(argv_test++));
+    bool curl_on            = false;
+    int nwaUnitSelection    = atoi(*(argv_test++));
+    char * fileName         = *argv_test;
     
     double lambda, bias_um;
     double NA_P = NA + sin(CRA);
@@ -717,6 +734,7 @@ int main(int argc, char** argv)
     double dbscale = 0; // db unit to microns
     int numBlocksOnSide = 1;
     double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rNp, rNq, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
+    double pupilCoordinates[2];
 
     long totalPoly = 0;
     unsigned char gdsPost[8];
@@ -860,6 +878,8 @@ int main(int argc, char** argv)
         //Loop through angle
         startAngle     = ((double) (rand() % 1000))/1000 * 2 * M_PI ; // randomize start
         currentAngle = startAngle;
+
+        
         
         while(true){
             if (currentAngle >= startAngle + 2 * M_PI){
@@ -875,13 +895,10 @@ int main(int argc, char** argv)
              *      x => x cos(beta)
              *      p => p - x sin(beta)
              */
-
-            cx = sin(atan(x*cos(beta)/(p - x*sin(beta))))/NA;
-            cy = sin(atan(y/(p - x*sin(beta))))/NA;
-            if (CRA != 0){
-                cy -= sin(CRA)/NA;
-            }
-        
+            getPupilCoordinatesFromZPCoordinates(x, y, p, pupilCoordinates, beta, NA, CRA);
+            cx = pupilCoordinates[0];
+            cy = pupilCoordinates[1];
+  
             
             // Accept or reject trap based on pupil boundaries and obscuration
             if (anamorphicFac != 1 && anamorphicFac > 0){ // Anamorphic case
@@ -1004,53 +1021,32 @@ int main(int argc, char** argv)
         printf("Writing obscuration with sigma %0.2f\n", obscurationSigma);
 
 
-        double qa, qb, qc, qal, qxm, qxp, qxstart, qxend, qxrange, qxstep;
+        double kx, ky;
         int nObsPts = 360;
-
-        /**
-         * Solve for the x-bounds on the obscuration.
-         * Solution is analytic and can be described in the google doc:
-         * "SERM ZP Tilt notes"
-         */
-
-        qal = asin(NA*obscurationSigma);
-        double kx = NA*obscurationSigma*cos(theta) + sin(CRA);
-        double ky = NA*obscurationSigma*sin(theta);
-        
-        // Solve quadratic to find x bounds:
-        qa = square(sin(beta))*square(tan(qal)) - square(cos(beta));
-        qb = -2*p*sin(beta)*square(tan(qal));
-        qc = square(p)*square(tan(qal));
-
-        qxm = (-qb + sqrt(square(qb) - 4*qa*qc))/(2*qa);
-        qxp = (-qb - sqrt(square(qb) - 4*qa*qc))/(2*qa);
-
-        printf("[NA, sigma] = [%0.3f, %0.3f]\n", NA, obscurationSigma);
-        printf("Obscuration [p, alpha] = [%0.3f, %0.3f]\n", p, qal);
-        printf("Obscuration quadtratic [A,B,C] = [%0.3f, %0.3f, %0.3f]\n", qa, qb, qc);
-        printf("Obscuration x-bounds solved as [%0.3f, %0.3f]\n", qxm, qxp);
-
-        // create an even grid between qxm and qxp:
-        qxstart = qxm ;
-        qxend   = qxp ;
-        qxrange = qxend - qxstart;
-        qxstep  = qxrange/(nObsPts/2 - 1);
-
         double qXCoords[nObsPts];
         double qYCoords[nObsPts];
 
-        // populate obscuration coordinates, spacing using cosine function
-        for (int k = 0; k < nObsPts/2; k++){
-            qXCoords[k] = qxstart + qxrange*(0.5 - 0.5*cos(2*M_PI*k/nObsPts));
-            qYCoords[k] = sqrt(square(qXCoords[k])*qa + qXCoords[k]*qb + qc);
-        }
-        for (int k = 0; k < nObsPts/2; k++){
-            qXCoords[k + nObsPts/2] =  qxend - qxrange*(0.5 - 0.5*cos(2*M_PI*k/nObsPts));
-            qYCoords[k + nObsPts/2] = -sqrt(square(qXCoords[k + nObsPts/2])*qa + qXCoords[k + nObsPts/2]*qb + qc);
+        double coordinates[2];
+
+        /**
+         * Refer to overleaf notes "Generalized zone plate aperture geometry"
+         */
+
+        double thStep = 2*M_PI/nObsPts;
+        double theta;
+        for (int k = 0; k < nObsPts; k++){
+            theta = thStep * k;
+
+            kx = NA*obscurationSigma*cos(theta);
+            ky = NA*obscurationSigma*sin(theta) + sin(CRA);
+
+            getZPCoordinatesFromFrequency(kx, ky, p, coordinates, beta);
+
+            qXCoords[k] = coordinates[0];
+            qYCoords[k] = coordinates[1];
         }
 
-
-        double azRot = CRAAz + M_PI/2;
+        double azRot = CRAAz;
         for (int k = 0; k < (nObsPts/2 - 1); k++){
             totalPoly++;
 

@@ -1051,20 +1051,20 @@ int main(int argc, char** argv)
             totalPoly++;
 
             long trapCoords[10];
-            trapCoords[0] = (long) dbscale*(cos(azRot)*qXCoords[k] - sin(azRot) * qYCoords[k]);
-            trapCoords[1] = (long) dbscale*(sin(azRot)*qXCoords[k] + cos(azRot) * qYCoords[k]);
+            trapCoords[0] = (long) dbscale*(offsetX + cos(azRot)*qXCoords[k] - sin(azRot) * qYCoords[k]);
+            trapCoords[1] = (long) dbscale*(offsetY + sin(azRot)*qXCoords[k] + cos(azRot) * qYCoords[k]);
 
-            trapCoords[2] = (long) dbscale*(cos(azRot)*qXCoords[k+1] - sin(azRot) * qYCoords[k+1]);
-            trapCoords[3] = (long) dbscale*(sin(azRot)*qXCoords[k+1] + cos(azRot) * qYCoords[k+1]);
+            trapCoords[2] = (long) dbscale*(offsetX + cos(azRot)*qXCoords[k+1] - sin(azRot) * qYCoords[k+1]);
+            trapCoords[3] = (long) dbscale*(offsetY + sin(azRot)*qXCoords[k+1] + cos(azRot) * qYCoords[k+1]);
 
-            trapCoords[4] = (long) dbscale*(cos(azRot)*qXCoords[nObsPts - k - 2] - sin(azRot) * qYCoords[nObsPts - k - 2]);
-            trapCoords[5] = (long) dbscale*(sin(azRot)*qXCoords[nObsPts - k - 2] + cos(azRot) * qYCoords[nObsPts - k - 2]);
+            trapCoords[4] = (long) dbscale*(offsetX + cos(azRot)*qXCoords[nObsPts - k - 2] - sin(azRot) * qYCoords[nObsPts - k - 2]);
+            trapCoords[5] = (long) dbscale*(offsetY + sin(azRot)*qXCoords[nObsPts - k - 2] + cos(azRot) * qYCoords[nObsPts - k - 2]);
 
-            trapCoords[6] = (long) dbscale*(cos(azRot)*qXCoords[nObsPts - k - 1] - sin(azRot) * qYCoords[nObsPts - k - 1]);
-            trapCoords[7] = (long) dbscale*(sin(azRot)*qXCoords[nObsPts - k - 1] + cos(azRot) * qYCoords[nObsPts - k - 1]);
+            trapCoords[6] = (long) dbscale*(offsetX + cos(azRot)*qXCoords[nObsPts - k - 1] - sin(azRot) * qYCoords[nObsPts - k - 1]);
+            trapCoords[7] = (long) dbscale*(offsetY + sin(azRot)*qXCoords[nObsPts - k - 1] + cos(azRot) * qYCoords[nObsPts - k - 1]);
 
-            trapCoords[8] = (long) dbscale*(cos(azRot)*qXCoords[k] - sin(azRot) * qYCoords[k]);
-            trapCoords[9] = (long) dbscale*(sin(azRot)*qXCoords[k] + cos(azRot) * qYCoords[k]);
+            trapCoords[8] = (long) dbscale*(offsetX + cos(azRot)*qXCoords[k] - sin(azRot) * qYCoords[k]);
+            trapCoords[9] = (long) dbscale*(offsetY + sin(azRot)*qXCoords[k] + cos(azRot) * qYCoords[k]);
         
             // Export shape
             exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535);

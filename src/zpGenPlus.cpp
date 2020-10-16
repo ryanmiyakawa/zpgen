@@ -124,19 +124,32 @@ void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed){
     float y[4] = {(float)coords[1], (float)coords[3], (float)coords[5], (float)coords[7]};
     
     // printf("Presorting: ");
-    // printf("[%0.5f,%0.5f], [%0.5f,%0.5f], [%0.5f,%0.5f], [%0.5f,%0.5f]\n", x[0], y[0],x[1], y[1],x[2], y[2],x[3], y[3]);
+    // printf("[[%0.5f,%0.5f]; [%0.5f,%0.5f]; [%0.5f,%0.5f]; [%0.5f,%0.5f]]\n", x[0], y[0],x[1], y[1],x[2], y[2],x[3], y[3]);
 
     // Sortrows
     sortRows(x,y);
     // printf("Postsorting: ");
-    // printf("[%0.5f,%0.5f], [%0.5f,%0.5f], [%0.5f,%0.5f], [%0.5f,%0.5f]\n", x[0], y[0],x[1], y[1],x[2], y[2],x[3], y[3]);
+    // printf("[[%0.5f,%0.5f]; [%0.5f,%0.5f]; [%0.5f,%0.5f]; [%0.5f,%0.5f]]", x[0], y[0],x[1], y[1],x[2], y[2],x[3], y[3]);
     
     // Find intersections.  Two cases: y[3] -> y[1] (more common), or y[3] -> y[0] (less common)
     float xU, xD;
-    if ( (x[0] > x[1]) != (x[3] > x[2]) ){  // slope of top and bottom lines are the same
+
+    // There are two types of trapezoids:
+    /**
+     *  1) 0 -> 3 is max slope ore min slope
+     *  2) 0 -> 3 is in between 0->2 and 0->1
+     */
+
+    float m03 = atan2((y[3] - y[0]),(x[3] - x[0]));
+    float m02 = atan2((y[2] - y[0]),(x[2] - x[0]));
+    float m01 = atan2((y[1] - y[0]),(x[1] - x[0]));
+
+    if ( (m03 > m01) == (m02 > m03)){  
+        // printf(": Used type 1 trapezoid (mid) \n");
         xU = x[3] - (x[3] - x[1])*(y[3] - y[2])/(y[3] - y[1]);
         xD = x[2] - (x[2] - x[0])*(y[2] - y[1])/(y[2] - y[0]);
-    } else { // Otherwise, send rays to lowest point and higher middle point
+    } else { // case 2 trapezoid
+    //  printf(": Used type 1 trapezoid (L/R) \n");
         // xU = x[3] - (x[3] - x[0])*(y[3] - y[2])/(y[3] - y[0]);
         // xD = x[3] - (x[3] - x[0])*(y[3] - y[1])/(y[3] - y[0]);
         xU = x[0] + (x[3] - x[0])*(y[2] - y[0])/(y[3] - y[0]);

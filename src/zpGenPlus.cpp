@@ -123,8 +123,13 @@ void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed){
     float x[4] = {(float)coords[0], (float)coords[2], (float)coords[4], (float)coords[6]};
     float y[4] = {(float)coords[1], (float)coords[3], (float)coords[5], (float)coords[7]};
     
+    // printf("Presorting: ");
+    // printf("[%0.5f,%0.5f], [%0.5f,%0.5f], [%0.5f,%0.5f], [%0.5f,%0.5f]\n", x[0], y[0],x[1], y[1],x[2], y[2],x[3], y[3]);
+
     // Sortrows
     sortRows(x,y);
+    // printf("Postsorting: ");
+    // printf("[%0.5f,%0.5f], [%0.5f,%0.5f], [%0.5f,%0.5f], [%0.5f,%0.5f]\n", x[0], y[0],x[1], y[1],x[2], y[2],x[3], y[3]);
     
     // Find intersections.  Two cases: y[3] -> y[1] (more common), or y[3] -> y[0] (less common)
     float xU, xD;
@@ -132,8 +137,10 @@ void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed){
         xU = x[3] - (x[3] - x[1])*(y[3] - y[2])/(y[3] - y[1]);
         xD = x[2] - (x[2] - x[0])*(y[2] - y[1])/(y[2] - y[0]);
     } else { // Otherwise, send rays to lowest point and higher middle point
-        xU = x[3] - (x[3] - x[0])*(y[3] - y[2])/(y[3] - y[0]);
-        xD = x[3] - (x[3] - x[0])*(y[3] - y[1])/(y[3] - y[0]);
+        // xU = x[3] - (x[3] - x[0])*(y[3] - y[2])/(y[3] - y[0]);
+        // xD = x[3] - (x[3] - x[0])*(y[3] - y[1])/(y[3] - y[0]);
+        xU = x[0] + (x[3] - x[0])*(y[2] - y[0])/(y[3] - y[0]);
+        xD = x[0] + (x[3] - x[0])*(y[1] - y[0])/(y[3] - y[0]);
     }
     float xDL, xDR, xUL, xUR;
     
@@ -153,6 +160,13 @@ void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed){
         xUR = xU;
     }
     
+//     printf("Lower tri: Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
+//             (long) x[0], (long)y[0], (long)xDR, (long)y[1], (long)x[0], (long)xDL); // lower tri
+//  printf("Upper tri: Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
+//             (long) xUL, (long)y[2], (long)x[3], (long)y[3], (long)xUR, (long)x[3]); // upper tri
+// printf("Middle trap: Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
+//                 (long) xDL, (long)y[1], (long)xUR, (long)y[2], (long)xDR, (long)xUL); // middle trap
+
     if (y[1] - y[0] > heightTol){
         fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
             (long) x[0], (long)y[0], (long)xDR, (long)y[1], (long)x[0], (long)xDL); // lower tri
@@ -1035,7 +1049,7 @@ int main(int argc, char** argv)
         double thStep = 2*M_PI/nObsPts;
         double theta;
         for (int k = 0; k < nObsPts; k++){
-            theta = thStep * k;
+            theta = thStep * k + M_PI/2;
 
             kx = NA*obscurationSigma*cos(theta);
             ky = NA*obscurationSigma*sin(theta) + sin(CRA);

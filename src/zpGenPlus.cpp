@@ -1045,7 +1045,11 @@ int main(int argc, char** argv)
 
     // Write obscuration.  Note: cannot write obscuration in arcs presently
     if (Opposite_Tone && obscurationSigma > 0 && File_format != 0){
-        printf("Writing obscuration with sigma %0.2f\n", obscurationSigma);
+        printf("Writing obscuration with sigma: %0.2f\n", obscurationSigma);
+        printf("Obscuration anamorphic factor: %0.2f\n", anamorphicFac);
+        if (anamorphicFac != 1){
+            printf("Writing asymmetric obscuration\n");
+        }
 
 
         double kx, ky;
@@ -1065,7 +1069,7 @@ int main(int argc, char** argv)
             theta = thStep * k + M_PI/2;
 
             kx = NA*obscurationSigma*cos(theta);
-            ky = NA*obscurationSigma*sin(theta) + sin(CRA);
+            ky = NA*obscurationSigma*sin(theta)/anamorphicFac + sin(CRA);
 
             getZPCoordinatesFromFrequency(kx, ky, p, coordinates, beta);
 

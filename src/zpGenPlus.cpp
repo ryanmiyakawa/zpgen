@@ -921,7 +921,7 @@ int main(int argc, char** argv)
         startAngle     = ((double) (rand() % 1000))/1000 * 2 * M_PI ; // randomize start
         currentAngle = startAngle;
 
-        
+        double gapZoneSize = 0;
         
         while(true){
             if (currentAngle >= startAngle + 2 * M_PI){
@@ -1025,7 +1025,15 @@ int main(int argc, char** argv)
             if (buttressWidth == 0){
                 currentAngle = currentAngle + alpha;
             } else if (isGapZone){
-                currentAngle = currentAngle + dr*buttressPeriod/RCM;
+                // If the bridges in the odd zones require more than one trap to make, then keep a running tab of size
+                gapZoneSize += alpha;
+                if (gapZoneSize >= alphaBT){
+                    currentAngle = currentAngle + dr*buttressPeriod/RCM - alphaBT;
+                    gapZoneSize = 0;
+                } else {
+                    currentAngle = currentAngle + alpha;
+                }
+                
             } else{
                 if (alphaBT > alphaZT){
                     if (arcStart < 0){ // This segment requires multipe traps to satsify ztol.  Start counting

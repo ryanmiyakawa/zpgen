@@ -370,7 +370,7 @@ double customPhase(double cx, double cy, int customMaskIdx){
             return atan2(cy, cx);
 
     }
-    return true;
+    return 0;
 }
 
 bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double obscurationSigma){
@@ -380,7 +380,7 @@ bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double obs
 }
 
 double objectiveFn(double r, double th, double N, double p, double q,
-                   double phase, double lambda, double beta) {
+                   double phase, double lambda, double beta, int virtualObject) {
     
     double pp, qp, rp, zpTerm, phTerm, plTermP, plTermQ;
     
@@ -401,10 +401,10 @@ double objectiveFn(double r, double th, double N, double p, double q,
     zpTerm = -N*lambda/2;
     phTerm = phase*lambda;
     
-    return plTermP + plTermQ + zpTerm + phTerm;
+    return plTermP + virtualObject*plTermQ + zpTerm + phTerm;
 }
 
-double secantSolve(double dRGuess, double th, double N, double p, double q, double phase, double lambda, double beta){
+double secantSolve(double dRGuess, double th, double N, double p, double q, double phase, double lambda, double beta, int virtualObject){
     double tolX = 0.00001;
     int maxIter = 50;
     
@@ -413,12 +413,15 @@ double secantSolve(double dRGuess, double th, double N, double p, double q, doub
     x1 = dRGuess;
     x2 = x1*1.02;
     for (int currentIter = 0; currentIter < maxIter; currentIter++){
-        fxm1 = objectiveFn(x1, th, N, p, q, phase, lambda, beta);
-        fxm2 = objectiveFn(x2, th, N, p, q, phase, lambda, beta);
+        fxm1 = objectiveFn(x1, th, N, p, q, phase, lambda, beta, virtualObject);
+        fxm2 = objectiveFn(x2, th, N, p, q, phase, lambda, beta, virtualObject);
 
         R0 = x1 - fxm1*(x1 - x2) / (fxm1 - fxm2);
-        if (abs(R0 - x1) < tolX)
+        if (abs(R0 - x1) < tolX){
+            // printf("p: %0.6f, q: %0.6f, N: %d, lambda: %0.3f, beta: %0.2f, ph: %0.3f, isVirt: %d\n", p, q, (int)N, lambda, beta, phase, virtualObject);
             return R0;
+
+        }
     
         //Set new guesses
         x2 = x1;
@@ -584,7 +587,6 @@ void notifyJoanie(float progress, int zpID){
 int main(int argc, char** argv)
 {
     clock_t begin = clock();
-    printf("\nUsing new RCM framework\n");
 
     
     if (argc == 1) {
@@ -598,12 +600,22 @@ int main(int argc, char** argv)
     double lambda_nm = atof(*(argv_test++));
     double p = atof(*(argv_test++));
     double q = atof(*(argv_test++));
+
+    // Need p and q to be positive
     
     // Need p to define NA, assume NA is always defined on fast side
-    if (p > q){ // swap
+    int virtualObject = 0;
+    if (abs(p) > abs(q)){ // swap
         double tempP = p;
         p = q;
         q = tempP;
+    }
+    if (p * q < 0){
+        virtualObject = -1;
+        p = abs(p);
+        q = abs(q);
+
+        printf("Detected Virtual swapped");
     }
     
     double obscurationSigma = atof(*(argv_test++));
@@ -647,7 +659,7 @@ int main(int argc, char** argv)
     
     double lambda, bias_um;
     double NA_P = NA + sin(CRA);
-    double D = 2*p*tan(asin(NA_P));
+    double D = 2*abs(p)*tan(asin(NA_P));
     
     
     
@@ -772,11 +784,11 @@ int main(int argc, char** argv)
     /* Figure out number of zones by counting the number of waves that separate rN and f */
     f           = 1/(1/p + 1/q);
     pNA         = NA + sin(CRA);
-    RN          = p * tan(asin(pNA));    // R in plane of ZP
+    RN          = (p) * tan(asin(pNA));    // R in plane of ZP
     rNp         = sqrt(RN*RN + p*p);     // r is hypotenuse of RN and p
     rNq         = sqrt(RN*RN + q*q);     // r is hypotenuse of RN and p
-    zpCenterX   = -p*tan(CRA)*sin(CRAAz);
-    zpCenterY   = p*tan(CRA)*cos(CRAAz);
+    zpCenterX   = -(p)*tan(CRA)*sin(CRAAz);
+    zpCenterY   = (p)*tan(CRA)*cos(CRAAz);
     
     if (setToCenter){
         offsetX = -zpCenterX;
@@ -791,14 +803,16 @@ int main(int argc, char** argv)
 
     
     // Compute number of zones in this zone plate using RN path length difference
-    int N = 2*(int)((rNp - p + rNq - q)/lambda);
+    int N = 2*(int)((rNp - p + virtualObject*(rNq - q))/lambda);
+    printf("Zoneplate has %d zones \n", N);
+
 
     // Compute dRN and dR1 to bound dose information
-    RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta);
-    RNp1        = secantSolve(sqrt((N+1)*lambda*f), 0, N + 1, p, q, 0, lambda, beta);
+    RN          = secantSolve(sqrt(N*lambda*f), 0, N, p, q, 0, lambda, beta, virtualObject);
+    RNp1        = secantSolve(sqrt((N+1)*lambda*f), 0, N + 1, p, q, 0, lambda, beta, virtualObject);
     dRN         = RNp1 - RN;
-    R1          = secantSolve(sqrt(lambda*f), 0, 1, p, q, 0, lambda, beta);
-    R2          = secantSolve(sqrt(2*lambda*f), 0, 2, p, q, 0, lambda, beta);
+    R1          = secantSolve(sqrt(lambda*f), 0, 1, p, q, 0, lambda, beta, virtualObject);
+    R2          = secantSolve(sqrt(2*lambda*f), 0, 2, p, q, 0, lambda, beta, virtualObject);
     dR1         = R2 - R1;
     maxDose     = dRN/(dRN - bias_um);
     minDose     = dR1/(dR1 - bias_um);
@@ -846,8 +860,8 @@ int main(int argc, char** argv)
         //Compute initial R at an arbitrary angle.  This will seed information regarding RoC for zone tol:
         rGuess     = sqrt(n*lambda*f);
         rGuessp1   = sqrt((n + 1)*lambda*f);
-        Rn         = secantSolve(rGuess, 0, n, p, q, 0, lambda, beta);
-        Rnp1       = secantSolve(rGuessp1, 0, n + 1, p, q, 0, lambda, beta);
+        Rn         = secantSolve(rGuess, 0, n, p, q, 0, lambda, beta, virtualObject);
+        Rnp1       = secantSolve(rGuessp1, 0, n + 1, p, q, 0, lambda, beta, virtualObject);
         dr         = Rnp1 - Rn;
         
         // Write to support text file
@@ -891,11 +905,12 @@ int main(int argc, char** argv)
         alphaBT = buttressWidth/Rn;
         
         // Set alpha to the tighter of the two constraints
-        if ( (buttressWidth != 0 && alphaBT < alphaZT) || isGapZone)
+        if ( (buttressWidth != 0 && alphaBT < alphaZT) )
             alpha = alphaBT;
         else
             alpha = alphaZT;
         
+        // printf("alphaBT: %0.3f, alphaZT: %0.3f, alpha: %0.3f, isGapZone: %d\n", alphaBT, alphaZT, alpha, (int) isGapZone);
         //For dealing with mixed conditions above
         arcStart = -1;
         
@@ -951,11 +966,13 @@ int main(int argc, char** argv)
         
             // Compute phase terms in waves
             phase = getPhaseTerm(cx, cy, orders, nZerns, ZPCPhase, ZPCR1, ZPCR2);
+            // printf("phase: %0.3f,  ", phase);
             phase += customPhase(cx, cy, customMaskIdx)/(2*M_PI);
-        
+            // printf("phase: %0.3f,  ", phase);
+
             // Use initial R as seeds for each subsequent compuptation of zone radii
-            Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta);
-            Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta);
+            Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta, virtualObject);
+            Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta, virtualObject);
             
             // Compute CM to optimized trap to arc and trap coords
             dr  = Rnp1 - Rn;
@@ -1033,7 +1050,7 @@ int main(int argc, char** argv)
         if (File_format == 0){ // ARC format
             printf("Finished zone %d with %ld arcs\n", n, trapCount);
         } else {
-            printf("Finished zone %d with %ld traps\n", n, trapCount);
+            printf("Finished zone %d with %ld traps.  \tR_%d = %0.3f \n", n, trapCount, n, Rn);
         }
         if (curl_on && n % 100 == 0) {
             float progress = ((float)n)/((float)N);

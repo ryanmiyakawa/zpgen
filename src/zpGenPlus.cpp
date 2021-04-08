@@ -846,29 +846,6 @@ int main(int argc, char** argv)
             cy = (sin(atan(y/p)) - sin(CRA))/NA;
         }
     
-        
-        // Accept or reject trap based on pupil boundaries and obscuration
-        if (anamorphicFac != 1 && anamorphicFac > 0){ // Anamorphic case
-            if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)){
-                currentAngle = currentAngle + alpha;
-                continue;
-            }
-        } else { // isomorphic case
-            if (!bIsInGeometry(cx, cy, obscurationSigma, CRA)){
-                currentAngle = currentAngle + alpha;
-                continue;
-            }
-        }
-        
-        
-        // Apply custom mask
-        if (customMaskIdx != 0){
-            if(!bIsInCustomMask(cx, cy, customMaskIdx)){
-                currentAngle = currentAngle + alpha;
-                continue;
-            }
-        }
-    
         // Compute phase terms in waves
         phase = getPhaseTerm(cx, cy, orders, nZerns, ZPCPhase, ZPCR1, ZPCR2);
         phase += customPhase(cx, cy, customMaskIdx)/(2*M_PI);
@@ -881,6 +858,46 @@ int main(int argc, char** argv)
         dr  = Rnp1 - Rn;
         RCM = (Rnp1*Rnp1*Rnp1 - Rn*Rn*Rn) / (Rnp1*Rnp1 - Rn*Rn)  * 2/3 * sin(alpha)/alpha;
         //RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
+
+
+
+        // Recompute pupil coordiantes of shape with new phase terms for aperture thresholds
+         // Get relative coordinates
+        x = RCM*cos(currentAngle);
+        y = RCM*sin(currentAngle);
+    
+
+        if (CRA == 0){
+            cx = sin(atan(x/p))/NA;
+            cy = sin(atan(y/p))/NA;
+        }
+        else{
+            cx = (sin(atan(x/p)))/NA;
+            cy = (sin(atan(y/p)) - sin(CRA))/NA;
+        }
+
+        // Accept or reject trap based on pupil boundaries and obscuration
+        if (anamorphicFac != 1 && anamorphicFac > 0){ // Anamorphic case
+            if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)){
+                currentAngle = currentAngle + alpha;
+                continue;
+            }
+        } else { // isomorphic case
+            if (!bIsInGeometry(cx, cy, obscurationSigma, CRA)){
+                currentAngle = currentAngle + alpha;
+                continue;
+            }
+        }
+            
+        // Apply custom mask
+        if (customMaskIdx != 0){
+            if(!bIsInCustomMask(cx, cy, customMaskIdx)){
+                currentAngle = currentAngle + alpha;
+                continue;
+            }
+        }
+
+    
         
         // Rotate zone plate by CRA azimuth
         drawAngle = currentAngle + CRAAz;

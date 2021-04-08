@@ -2,3 +2,6 @@
 src/.vscode/*
 src/zpGenPlus
 src/zpGenPlus.dSYM
+*.gds
+*.wrv
+test-scripts/test-files/*

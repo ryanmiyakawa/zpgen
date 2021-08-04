@@ -116,8 +116,21 @@ void sortRows(float * x, float * y){
     }
 }
 
+long roundCoordToPixel(float val, float blockGrid_pixels){
+
+    // return (long) val;
+
+
+    printf("blockgridpix: %0.3f", blockGrid_pixels);
+    if (blockGrid_pixels <= 1){
+        return (long) roundf(val);
+    }
+    return (long) (roundf( val/blockGrid_pixels ) * blockGrid_pixels);
+}
+
+
 // Fractures trapeizoids into two triangles and a horizontal trapezoid for WRV
-void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed){
+void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed, float blockGrid_pixels){
     float heightTol = 5; // shapes with smaller than 0.5 nm height are ignored
     // Need to sort coords
     float x[4] = {(float)coords[0], (float)coords[2], (float)coords[4], (float)coords[6]};
@@ -182,15 +195,34 @@ void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed){
 
     if (y[1] - y[0] > heightTol){
         fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
-            (long) x[0], (long)y[0], (long)xDR, (long)y[1], (long)x[0], (long)xDL); // lower tri
+            roundCoordToPixel(x[0], blockGrid_pixels), 
+            roundCoordToPixel(y[0], blockGrid_pixels), 
+            roundCoordToPixel(xDR, blockGrid_pixels), 
+            roundCoordToPixel(y[1], blockGrid_pixels), 
+            roundCoordToPixel(x[0], blockGrid_pixels), 
+            roundCoordToPixel(xDL, blockGrid_pixels)
+        ); // lower tri
     }
+
     if (y[3] - y[2] > heightTol){
         fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
-            (long) xUL, (long)y[2], (long)x[3], (long)y[3], (long)xUR, (long)x[3]); // upper tri
+            roundCoordToPixel(xUL, blockGrid_pixels), 
+            roundCoordToPixel(y[2], blockGrid_pixels),
+            roundCoordToPixel(x[3], blockGrid_pixels), 
+            roundCoordToPixel(y[3], blockGrid_pixels), 
+            roundCoordToPixel(xUR, blockGrid_pixels),  
+            roundCoordToPixel(x[3], blockGrid_pixels)
+        ); // upper tri
     }
     if (y[2] - y[1] > heightTol){
         fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
-                (long) xDL, (long)y[1], (long)xUR, (long)y[2], (long)xDR, (long)xUL); // middle trap
+            roundCoordToPixel(xDL, blockGrid_pixels), 
+            roundCoordToPixel(y[1], blockGrid_pixels), 
+            roundCoordToPixel(xUR, blockGrid_pixels), 
+            roundCoordToPixel(y[2], blockGrid_pixels), 
+            roundCoordToPixel(xDR, blockGrid_pixels), 
+            roundCoordToPixel(xUL, blockGrid_pixels)
+        ); // middle trap
     }
 }
 
@@ -204,7 +236,7 @@ void exportArc(double R, double dR, double theta, double dTheta, double dose, do
 
 
 void exportPolygon(long * coords, unsigned char * polyPre, unsigned char * polyPost,
-                   unsigned char * polyForm, FILE * outputFile, int File_format, long clockSpeed){
+                   unsigned char * polyForm, FILE * outputFile, int File_format, long clockSpeed, float blockGrid_pixels){
     switch (File_format){
         case 1:
         case 2:
@@ -216,7 +248,7 @@ void exportPolygon(long * coords, unsigned char * polyPre, unsigned char * polyP
             fwrite(polyPost, sizeof(char), 4, outputFile);
             break;
         case 3:
-            fractureAndWriteWRVPoly(coords, outputFile, clockSpeed);
+            fractureAndWriteWRVPoly(coords, outputFile, clockSpeed, blockGrid_pixels);
             break;
         }
 }
@@ -652,6 +684,9 @@ int main(int argc, char** argv)
     int NoP                 = atoi(*(argv_test++));
     int IoP                 = atoi(*(argv_test++));
     //int zpID = atoi(*(argv_test++));
+    float blockGrid_pm        = atof(*(argv_test++)); // block grid (WRV)
+
+
     int layerNumber         = atoi(*(argv_test++));
     bool curl_on            = false;
     int nwaUnitSelection    = atoi(*(argv_test++));
@@ -699,6 +734,15 @@ int main(int argc, char** argv)
     
     lambda = lambda_nm / 1000;
     bias_um = bias_nm/1000;
+
+    float blockGrid_pixels = 0;
+    // WRV compute blockGrid in units of pixels:
+    if (blockGrid_pm >= block_unit_size_pm && blockGrid_pm > 0){
+        blockGrid_pixels = blockGrid_pm / block_unit_size_pm;
+        printf("Rounding WRV pixels by \t\t= %d pixels\n", (int)roundf(blockGrid_pixels));
+    } else {
+        blockGrid_pixels = 0;
+    }
     
     
     printf("\nCreating zone plate:\nNA_P \t\t\t= %0.3f\n", NA_P);
@@ -712,6 +756,11 @@ int main(int argc, char** argv)
         printf("Zernike Number \t\t= %f \n", orders[j]);
         printf("Weight \t\t\t= %f waves\n", orders[j + nZerns]);
     }
+
+
+    printf("WRV block grid \t = %g\n", blockGrid_pm);
+    printf("BlockGrid pixels \t = %d\n", (int)roundf(blockGrid_pixels));
+
     
     printf("tilted angle beta \t= %g in radian\n", beta);
     printf("Max zone phase error\t= lambda/%d\n", (int)(1 / zTol));
@@ -1016,7 +1065,7 @@ int main(int argc, char** argv)
                 trapCoords[9] = (long) dbscale*(tR1*sin(drawAngle - alpha/2) + offsetY);
             
                 // Export shape
-                exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed);
+                exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed, blockGrid_pixels);
             }
         
             trapCount++;
@@ -1123,7 +1172,7 @@ int main(int argc, char** argv)
             trapCoords[9] = (long) dbscale*(offsetY + sin(azRot)*qXCoords[k] + cos(azRot) * qYCoords[k]);
         
             // Export shape
-            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535);
+            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535, blockGrid_pixels);
 
         }
     }

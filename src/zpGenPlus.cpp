@@ -1026,7 +1026,14 @@ int main(int argc, char** argv)
             alpha = alphaBT;
         }
         else {
-            alpha = alphaZT;
+            if (buttressWidth == 0){
+                alpha = alphaZT;
+            } else {
+
+                // round this to nearest mulltiple
+                int alphaRatio = (alphaBT / alphaZT) + 1;
+                alpha = alphaBT * 1.01 / ((double) alphaRatio);
+            }
         }
         
         // printf("alphaBT: %0.3f, alphaZT: %0.3f, alpha: %0.3f, isGapZone: %d\n", alphaBT, alphaZT, alpha, (int) isGapZone);

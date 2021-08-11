@@ -1022,10 +1022,12 @@ int main(int argc, char** argv)
         alphaBT = buttressWidth/Rn;
         
         // Set alpha to the tighter of the two constraints
-        if ( (buttressWidth != 0 && alphaBT < alphaZT) )
+        if ( (buttressWidth != 0 && alphaBT < alphaZT) ){
             alpha = alphaBT;
-        else
+        }
+        else {
             alpha = alphaZT;
+        }
         
         // printf("alphaBT: %0.3f, alphaZT: %0.3f, alpha: %0.3f, isGapZone: %d\n", alphaBT, alphaZT, alpha, (int) isGapZone);
         //For dealing with mixed conditions above

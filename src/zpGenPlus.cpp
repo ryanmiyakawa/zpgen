@@ -1165,8 +1165,8 @@ int main(int argc, char** argv)
 
 
                 // compute clockspeed by area fraction:
-                clockSpeed = getPolyClockSpeedFromAreaFraction(1/maxDose, 1/minDose, trapCoords_um, alpha * RCM * dr, dbscale, blockGrid_pixels);
-                // clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
+                // clockSpeed = getPolyClockSpeedFromAreaFraction(1/maxDose, 1/minDose, trapCoords_um, alpha * RCM * dr, dbscale, blockGrid_pixels);
+                clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
             
                 // Export shape
                 exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed, blockGrid_pixels);

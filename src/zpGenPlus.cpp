@@ -1138,7 +1138,7 @@ int main(int argc, char** argv)
                 tR1pa = tR1 + (Rnpa2 - Rn);
                 tR2ma = tR2 + (Rnma2 - Rn);
                 tR2pa = tR2 + (Rnpa2 - Rn);
-
+  
                 // Coordinates of trap
                 double trapCoords_um[8];
                     trapCoords_um[0] = (tR1ma*cos(drawAngle - alpha/2) + offsetX);

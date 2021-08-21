@@ -752,6 +752,12 @@ int main(int argc, char** argv)
     bool curl_on            = false;
     int nwaUnitSelection    = atoi(*(argv_test++));
     char * fileName         = *argv_test;
+
+    // For WRV, block unit is passed in as nwa unit
+    if (File_format == 3) {
+        block_unit_size_pm = nwaUnitSelection; 
+    }
+
     
     double lambda, bias_um;
     double NA_P = NA + sin(CRA);
@@ -789,8 +795,6 @@ int main(int argc, char** argv)
         case 8:
             nwaUnit = 0.008;
             break;
-
-            
     }
     
     lambda = lambda_nm / 1000;

@@ -130,7 +130,7 @@ long roundCoordToPixel(double val, double blockGrid_pixels){
 
 // Fractures trapeizoids into two triangles and a horizontal trapezoid for WRV
 void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed, double blockGrid_pixels){
-    float heightTol = 5; // shapes with smaller than 0.5 nm height are ignored
+    float heightTol = 1; // shapes with smaller than 0.5 nm height are ignored
     // Need to sort coords
     float x[4] = {(float)coords[0], (float)coords[2], (float)coords[4], (float)coords[6]};
     float y[4] = {(float)coords[1], (float)coords[3], (float)coords[5], (float)coords[7]};
@@ -375,6 +375,10 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx){
 
         case 16: // obscuration only
             return 0;
+        case 17: // sliver slice
+
+            return  abs(atan2(cy, cx)) < M_1_PI/180;
+            return 0;
 
     }
     return true;
@@ -519,7 +523,7 @@ double computeTriangleAreaByHeron(double a2, double b2, double c2){
 
 double computeAreaOfOrderedQuadrilateral(double * trapCoords, double dbScale, double blockGrid_pixels){
 
-    double x1, y1, x2, y2, x3, y3, A1, A2;
+    double x1, y1, x2, y2, x3, y3, x4, y4, A1, A2;
 
     // first triangle:
     x1 = ((double) roundCoordToPixel(trapCoords[0] * dbScale, blockGrid_pixels))/dbScale;
@@ -539,37 +543,45 @@ double computeAreaOfOrderedQuadrilateral(double * trapCoords, double dbScale, do
         );
     // printf("A1: %0.10f\n", A1);
     // second triangle:
-    x1 = ((double) roundCoordToPixel(trapCoords[4] * dbScale, blockGrid_pixels))/dbScale;
-    y1 = ((double) roundCoordToPixel(trapCoords[5] * dbScale, blockGrid_pixels))/dbScale;
-    x2 = ((double) roundCoordToPixel(trapCoords[6] * dbScale, blockGrid_pixels))/dbScale;
-    y2 = ((double) roundCoordToPixel(trapCoords[7] * dbScale, blockGrid_pixels))/dbScale;
-    x3 = ((double) roundCoordToPixel(trapCoords[0] * dbScale, blockGrid_pixels))/dbScale;
-    y3 = ((double) roundCoordToPixel(trapCoords[1] * dbScale, blockGrid_pixels))/dbScale;
+    x3 = ((double) roundCoordToPixel(trapCoords[4] * dbScale, blockGrid_pixels))/dbScale;
+    y3 = ((double) roundCoordToPixel(trapCoords[5] * dbScale, blockGrid_pixels))/dbScale;
+    x4 = ((double) roundCoordToPixel(trapCoords[6] * dbScale, blockGrid_pixels))/dbScale;
+    y4 = ((double) roundCoordToPixel(trapCoords[7] * dbScale, blockGrid_pixels))/dbScale;
+    x1 = ((double) roundCoordToPixel(trapCoords[0] * dbScale, blockGrid_pixels))/dbScale;
+    y1 = ((double) roundCoordToPixel(trapCoords[1] * dbScale, blockGrid_pixels))/dbScale;
 
     A2 = computeTriangleAreaByHeron( 
-            square(x2 - x1) + square(y2 - y1),
-            square(x3 - x2) + square(y3 - y2),
-            square(x1 - x3) + square(y1 - y3)
+            square(x4 - x3) + square(y4 - y3),
+            square(x1 - x4) + square(y1 - y4),
+            square(x3 - x1) + square(y3 - y1)
         );
+
+    // printf("[%0.4f,%0.4f,%0.4f,%0.4f; %0.4f,%0.4f,%0.4f,%0.4f] \n", 
+    //     x1, x2, x3, x4, y1, y2, y3, y4);
+
 
     return (A1 + A2) ;
 }
 
-long getPolyClockSpeedFromAreaFraction(double maxClockSpeed, double minClockSpeed, double * trapCoords, double nominalArea,
+long getPolyClockSpeedFromAreaFraction(double maxClockSpeed, double minClockSpeed, double * trapCoords, double * trapCoordsNoBias,
     double dbScale, double blockGrid_pixels ){
 
+    double griddedArea = computeAreaOfOrderedQuadrilateral(trapCoords, dbScale, blockGrid_pixels);
+    double nominalArea = computeAreaOfOrderedQuadrilateral(trapCoordsNoBias, dbScale, 0);
 
-    double thisClockSpeed = computeAreaOfOrderedQuadrilateral(trapCoords, dbScale, blockGrid_pixels) / nominalArea;
 
-    // printf("Area fraction %0.2f = %0.3f/%0.3f\n", thisClockSpeed, computeAreaOfOrderedQuadrilateral(trapCoords) , nominalArea);
-    if (thisClockSpeed > minClockSpeed){
+    double thisClockSpeed = griddedArea / nominalArea;
+
+    // printf("Area fraction %0.3f = %0.3f/%0.3f.  [m,M] = [%0.3f, %0.3f]\n", thisClockSpeed, griddedArea*1000, nominalArea*1000, minClockSpeed, maxClockSpeed);
+
+    if (thisClockSpeed < minClockSpeed){
             thisClockSpeed = minClockSpeed;
     }
-    if (thisClockSpeed < maxClockSpeed){
+    if (thisClockSpeed > maxClockSpeed){
         thisClockSpeed = maxClockSpeed;
     }
 
-    long clockSpeed = (long) ((maxClockSpeed - thisClockSpeed)/(maxClockSpeed - minClockSpeed) * 65535);
+    long clockSpeed = (long) ((thisClockSpeed - minClockSpeed)/(maxClockSpeed - minClockSpeed) * 65535);
 
     return clockSpeed;
 }
@@ -746,6 +758,7 @@ int main(int argc, char** argv)
     int IoP                 = atoi(*(argv_test++));
     //int zpID = atoi(*(argv_test++));
     double blockGrid_pm        = atof(*(argv_test++)); // block grid (WRV)
+    double blockGrid_um = blockGrid_pm/1000000;
 
 
     int layerNumber         = atoi(*(argv_test++));
@@ -801,10 +814,14 @@ int main(int argc, char** argv)
     bias_um = bias_nm/1000;
 
     double blockGrid_pixels = 0;
+    int computeDoseByGriddedAreaFraction = 0;
+
     // WRV compute blockGrid in units of pixels:
     if (blockGrid_pm >= block_unit_size_pm && blockGrid_pm > 0){
         blockGrid_pixels = blockGrid_pm /   ((double) block_unit_size_pm);
         printf("Rounding WRV pixels by \t\t= %d pixels\n", (int)roundf(blockGrid_pixels));
+
+        computeDoseByGriddedAreaFraction = 1;
     } else {
         blockGrid_pixels = 0;
     }
@@ -889,7 +906,7 @@ int main(int argc, char** argv)
     double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, 
                 x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, 
                 RCM = 0, tR1, tR2, f, pNA, RN, rNp, rNq, RNp1, dRN, 
-                Rnpa2, Rnma2, tR1pa, tR1ma, tR2pa, tR2ma,
+                Rnpa2, Rnma2, tR1pa, tR1ma, tR2pa, tR2ma, tR1nb, tR2nb, tR1panb, tR1manb, tR2panb, tR2manb,
                 minDose, maxDose, doseBias, 
                 zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
     double pupilCoordinates[2];
@@ -933,8 +950,33 @@ int main(int argc, char** argv)
     R1          = secantSolve(sqrt(lambda*f), 0, 1, p, q, 0, lambda, beta, virtualObject);
     R2          = secantSolve(sqrt(2*lambda*f), 0, 2, p, q, 0, lambda, beta, virtualObject);
     dR1         = R2 - R1;
-    maxDose     = dRN/(dRN - bias_um);
-    minDose     = dR1/(dR1 - bias_um);
+
+
+
+    if (computeDoseByGriddedAreaFraction){
+        // Largest possible area fraction is in a 0 bias case where the polygon expands by block grid in all directions
+        // Assume a nominal shape of dRN X 5 * dRN:
+        minDose = (dRN + 2*blockGrid_um) * (5*dRN + 2*blockGrid_um) /
+                  ((dRN - 2*blockGrid_um) * (5*dRN - 2*blockGrid_um));
+
+
+        // smallest possible area fraction is reverse case but with bias
+        maxDose  = (dRN - bias_um - 2*blockGrid_um) * (5*dRN - 2*blockGrid_um) /
+                  ((dRN + 2*blockGrid_um) * (5*dRN + 2*blockGrid_um));
+
+        printf("dRN:%0.3f, dR1: %0.3f, bias: %0.6f, bg: %0.3f\n", dRN, dR1, bias_um, blockGrid_um);
+    } else {
+        // Largest possible area fraction
+        minDose     = (dRN)/(dRN - bias_um); // 1/maxAreaFraction
+
+        // smallest possible area fraction
+        maxDose     = (dR1)/(dR1 - bias_um); // 1/maxAreaFraction
+        printf("dRN:%0.3f, dR1: %0.3f, bias: %0.6f, bg: %0.3f\n", dRN, dR1, bias_um, blockGrid_um);
+    }
+  
+
+    // minDose     = 1; // 1/minAreaFraction
+
     
     switch (File_format){
         case 0: // NWA (arc)
@@ -1127,23 +1169,33 @@ int main(int argc, char** argv)
             }
             else { // GDS or WRV format
                 
-                
-                
+                // Unbiased CM radii
+                tR1nb = (RCM - dr/2)*1/cos(alpha/2);
+                tR2nb = (RCM + dr/2)*1/cos(alpha/2);
+
+                // Appy biases
                 if (isGapZone){
-                    tR1 = (RCM - dr/2)*1/cos(alpha/2) - bias_um/2;
-                    tR2 = (RCM + dr/2)*1/cos(alpha/2) + bias_um/2;
+                    tR1 = tR1nb - bias_um/2;
+                    tR2 = tR2nb + bias_um/2;
                 } else {
-                    tR1 = (RCM - dr/2)*1/cos(alpha/2) + bias_um/2;
-                    tR2 = (RCM + dr/2)*1/cos(alpha/2) - bias_um/2;
+                    tR1 = tR1nb + bias_um/2;
+                    tR2 = tR2nb - bias_um/2;
                 }
+
 
                 // Compute corrected radii at the edges of trap instead of center:
                 tR1ma = tR1 + (Rnma2 - Rn);
                 tR1pa = tR1 + (Rnpa2 - Rn);
                 tR2ma = tR2 + (Rnma2 - Rn);
                 tR2pa = tR2 + (Rnpa2 - Rn);
+
+                // version with no bias
+                tR1manb = tR1nb + (Rnma2 - Rn);
+                tR1panb = tR1nb + (Rnpa2 - Rn);
+                tR2manb = tR2nb + (Rnma2 - Rn);
+                tR2panb = tR2nb + (Rnpa2 - Rn);
   
-                // Coordinates of trap
+                // Coordinates of trap in real distance
                 double trapCoords_um[8];
                     trapCoords_um[0] = (tR1ma*cos(drawAngle - alpha/2) + offsetX);
                     trapCoords_um[1] = (tR1ma*sin(drawAngle - alpha/2) + offsetY);
@@ -1154,6 +1206,17 @@ int main(int argc, char** argv)
                     trapCoords_um[6] = (tR2ma*cos(drawAngle - alpha/2) + offsetX);
                     trapCoords_um[7] = (tR2ma*sin(drawAngle - alpha/2) + offsetY);
             
+                // Coordinates of trap unbiased
+                double trapCoords_um_noBias[8];
+                    trapCoords_um_noBias[0] = (tR1manb*cos(drawAngle - alpha/2) + offsetX);
+                    trapCoords_um_noBias[1] = (tR1manb*sin(drawAngle - alpha/2) + offsetY);
+                    trapCoords_um_noBias[2] = (tR1panb*cos(drawAngle + alpha/2) + offsetX);
+                    trapCoords_um_noBias[3] = (tR1panb*sin(drawAngle + alpha/2) + offsetY);
+                    trapCoords_um_noBias[4] = (tR2panb*cos(drawAngle + alpha/2) + offsetX);
+                    trapCoords_um_noBias[5] = (tR2panb*sin(drawAngle + alpha/2) + offsetY);
+                    trapCoords_um_noBias[6] = (tR2manb*cos(drawAngle - alpha/2) + offsetX);
+                    trapCoords_um_noBias[7] = (tR2manb*sin(drawAngle - alpha/2) + offsetY);
+
                 // Coordinates rounded to pixel scale
                 long trapCoords[10];
                     trapCoords[0] = (long) dbscale*trapCoords_um[0];
@@ -1168,9 +1231,13 @@ int main(int argc, char** argv)
                     trapCoords[9] = (long) dbscale*trapCoords_um[1];
 
 
-                // compute clockspeed by area fraction:
-                // clockSpeed = getPolyClockSpeedFromAreaFraction(1/maxDose, 1/minDose, trapCoords_um, alpha * RCM * dr, dbscale, blockGrid_pixels);
-                clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
+                if (computeDoseByGriddedAreaFraction){
+                    // compute clockspeed by area fraction, (not working right now):
+                    clockSpeed = getPolyClockSpeedFromAreaFraction(1/maxDose, 1/minDose, trapCoords_um, trapCoords_um_noBias, dbscale, blockGrid_pixels);
+                } else {
+                    // Old way to compute clock speed, still working
+                    clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
+                 }
             
                 // Export shape
                 exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed, blockGrid_pixels);

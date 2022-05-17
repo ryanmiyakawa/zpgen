@@ -5,3 +5,4 @@ src/zpGenPlus
 src/*.gds
 *.wrv
 test-scripts/test-files/*
+*.jar

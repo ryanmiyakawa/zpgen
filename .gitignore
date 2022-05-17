@@ -1,4 +1,8 @@
 .vscode/*
+src/.vscode/*
+src/zpGenPlus
 *.gds
+src/*.gds
 *.wrv
 test-scripts/test-files/*
+*.jar

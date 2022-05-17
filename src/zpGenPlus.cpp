@@ -834,7 +834,7 @@ int main(int argc, char **argv)
     FILE *supportTextFile = NULL;
     double dbscale = 0; // db unit to microns
     int numBlocksOnSide = 1;
-    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rNp, rNq, RNp1, dRN, minDose, maxDose, doseBias, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
+    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rNp, rNq, RNp1, dRN, minDose, maxDose, doseBias, zpTiltOffsetX, zpTiltOffsetY, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
     double pupilCoordinates[2];
 
     long totalPoly = 0;
@@ -852,11 +852,18 @@ int main(int argc, char **argv)
     zpCenterX = -(p)*tan(CRA) * sin(CRAAz);
     zpCenterY = (p)*tan(CRA) * cos(CRAAz);
 
-    if (setToCenter)
+    zpTiltOffsetX = p * sin(beta) * sin(CRAAz);
+    zpTiltOffsetY = -p * sin(beta) * cos(CRAAz);
+
+    if (setToCenter == 1)
     {
         offsetX = -zpCenterX;
         offsetY = -zpCenterY;
+    } else if (setToCenter == 2){
+        offsetX = zpTiltOffsetX;
+        offsetY = zpTiltOffsetY;
     }
+
     if (File_format == 3)
     {                                  // WRV: shift by one half block size
         numBlocksOnSide = layerNumber; // For WRV files we send num blocks on the GDSLayer input

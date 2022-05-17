@@ -1,11 +1,14 @@
-//
-//  zpGenPlus.cpp
-//  ZPGenPlus
-//
-//  Created by Ryan Miyakawa on 2/17/17.
-//  Copyright © 2017 Ryan Miyakawa and Henry Wang. All rights reserved.
-//
-// Refactoring ZPGen for speed and accuracy improvements.
+/**
+ * 
+ *  zpGenPlus.cpp
+ *  ZPGenPlus
+ *  Created by Ryan Miyakawa on 2/17/17.
+ *  Copyright © 2017 Ryan Miyakawa and Henry Wang. All rights reserved.
+ * 
+ * 
+ * 
+ */
+
 
 #include <stdio.h>
 #include <fstream>
@@ -131,9 +134,17 @@ void sortRows(float *x, float *y)
     }
 }
 
+long roundCoordToPixel(double val, double blockGrid_pixels){
+
+    if (blockGrid_pixels <= 1){
+        return (long) roundf(val);
+    }
+    return (long) (roundf( val/blockGrid_pixels ) * blockGrid_pixels);
+}
+
+
 // Fractures trapeizoids into two triangles and a horizontal trapezoid for WRV
-void fractureAndWriteWRVPoly(long *coords, FILE *outputFile, long clockSpeed)
-{
+void fractureAndWriteWRVPoly(long * coords, FILE * outputFile, long clockSpeed, double blockGrid_pixels){
     float heightTol = 5; // shapes with smaller than 0.5 nm height are ignored
     // Need to sort coords
     float x[4] = {(float)coords[0], (float)coords[2], (float)coords[4], (float)coords[6]};
@@ -208,17 +219,35 @@ void fractureAndWriteWRVPoly(long *coords, FILE *outputFile, long clockSpeed)
     if (y[1] - y[0] > heightTol)
     {
         fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
-                (long)x[0], (long)y[0], (long)xDR, (long)y[1], (long)x[0], (long)xDL); // lower tri
+            roundCoordToPixel(x[0], blockGrid_pixels), 
+            roundCoordToPixel(y[0], blockGrid_pixels), 
+            roundCoordToPixel(xDR, blockGrid_pixels), 
+            roundCoordToPixel(y[1], blockGrid_pixels), 
+            roundCoordToPixel(x[0], blockGrid_pixels), 
+            roundCoordToPixel(xDL, blockGrid_pixels)
+        ); // lower tri
     }
-    if (y[3] - y[2] > heightTol)
-    {
+
+    if (y[3] - y[2] > heightTol){
         fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
-                (long)xUL, (long)y[2], (long)x[3], (long)y[3], (long)xUR, (long)x[3]); // upper tri
+            roundCoordToPixel(xUL, blockGrid_pixels), 
+            roundCoordToPixel(y[2], blockGrid_pixels),
+            roundCoordToPixel(x[3], blockGrid_pixels), 
+            roundCoordToPixel(y[3], blockGrid_pixels), 
+            roundCoordToPixel(xUR, blockGrid_pixels),  
+            roundCoordToPixel(x[3], blockGrid_pixels)
+        ); // upper tri
     }
     if (y[2] - y[1] > heightTol)
     {
         fprintf(outputFile, "Trap/%ld %ld %ld %ld %ld %ld %ld\n", clockSpeed,
-                (long)xDL, (long)y[1], (long)xUR, (long)y[2], (long)xDR, (long)xUL); // middle trap
+            roundCoordToPixel(xDL, blockGrid_pixels), 
+            roundCoordToPixel(y[1], blockGrid_pixels), 
+            roundCoordToPixel(xUR, blockGrid_pixels), 
+            roundCoordToPixel(y[2], blockGrid_pixels), 
+            roundCoordToPixel(xDR, blockGrid_pixels), 
+            roundCoordToPixel(xUL, blockGrid_pixels)
+        ); // middle trap
     }
 }
 
@@ -230,24 +259,23 @@ void exportArc(double R, double dR, double theta, double dTheta, double dose, do
             offsetX / nwaUnit, offsetY / nwaUnit, 0., 0., dose);
 }
 
-void exportPolygon(long *coords, unsigned char *polyPre, unsigned char *polyPost,
-                   unsigned char *polyForm, FILE *outputFile, int File_format, long clockSpeed)
-{
-    switch (File_format)
-    {
-    case 1:
-    case 2:
-        char cCoords[40];
-        fwrite(polyPre, sizeof(char), 16, outputFile);
-        fwrite(polyForm, sizeof(char), 4, outputFile);
-        encodePoly32(coords, cCoords);
-        fwrite(cCoords, sizeof(char), 40, outputFile);
-        fwrite(polyPost, sizeof(char), 4, outputFile);
-        break;
-    case 3:
-        fractureAndWriteWRVPoly(coords, outputFile, clockSpeed);
-        break;
-    }
+
+void exportPolygon(long * coords, unsigned char * polyPre, unsigned char * polyPost,
+                   unsigned char * polyForm, FILE * outputFile, int File_format, long clockSpeed, double blockGrid_pixels){
+    switch (File_format){
+        case 1:
+        case 2:
+            char cCoords[40];
+            fwrite(polyPre, sizeof(char), 16, outputFile);
+            fwrite(polyForm, sizeof(char), 4, outputFile);
+            encodePoly32(coords, cCoords);
+            fwrite(cCoords, sizeof(char), 40, outputFile);
+            fwrite(polyPost, sizeof(char), 4, outputFile);
+            break;
+        case 3:
+            fractureAndWriteWRVPoly(coords, outputFile, clockSpeed, blockGrid_pixels);
+            break;
+        }
 }
 
 double computeZernikePhase(double cx, double cy, double *orders, int nZerns)
@@ -521,6 +549,73 @@ void getPupilCoordinatesFromZPCoordinates(double x, double yp, double P, double 
     coordinates[1] = (ky - sin(CRA)) / NA;
 }
 
+/**
+ * a2, b2, and c2 are the squared sides
+ */
+double computeTriangleAreaByHeron(double a2, double b2, double c2){
+
+    return sqrt( 4*a2 * b2 - (a2 + b2 - c2) * (a2 + b2 - c2)) / 4;
+}
+
+
+
+double computeAreaOfOrderedQuadrilateral(double * trapCoords, double dbScale, double blockGrid_pixels){
+
+    double x1, y1, x2, y2, x3, y3, A1, A2;
+
+    // first triangle:
+    x1 = ((double) roundCoordToPixel(trapCoords[0] * dbScale, blockGrid_pixels))/dbScale;
+    y1 = ((double) roundCoordToPixel(trapCoords[1] * dbScale, blockGrid_pixels))/dbScale;
+    x2 = ((double) roundCoordToPixel(trapCoords[2] * dbScale, blockGrid_pixels))/dbScale;
+    y2 = ((double) roundCoordToPixel(trapCoords[3] * dbScale, blockGrid_pixels))/dbScale;
+    x3 = ((double) roundCoordToPixel(trapCoords[4] * dbScale, blockGrid_pixels))/dbScale;
+    y3 = ((double) roundCoordToPixel(trapCoords[5] * dbScale, blockGrid_pixels))/dbScale;
+
+//  printf("1: [%0.2f], 1: [ %0.2f], 1: [ %0.2f]\n", square(x2 - x1) + square(y2 - y1), square(x3 - x2) + square(y3 - y2), square(x1 - x3) + square(y1 - y3));
+
+
+    A1 = computeTriangleAreaByHeron( 
+            square(x2 - x1) + square(y2 - y1),
+            square(x3 - x2) + square(y3 - y2),
+            square(x1 - x3) + square(y1 - y3)
+        );
+    // printf("A1: %0.10f\n", A1);
+    // second triangle:
+    x1 = ((double) roundCoordToPixel(trapCoords[4] * dbScale, blockGrid_pixels))/dbScale;
+    y1 = ((double) roundCoordToPixel(trapCoords[5] * dbScale, blockGrid_pixels))/dbScale;
+    x2 = ((double) roundCoordToPixel(trapCoords[6] * dbScale, blockGrid_pixels))/dbScale;
+    y2 = ((double) roundCoordToPixel(trapCoords[7] * dbScale, blockGrid_pixels))/dbScale;
+    x3 = ((double) roundCoordToPixel(trapCoords[0] * dbScale, blockGrid_pixels))/dbScale;
+    y3 = ((double) roundCoordToPixel(trapCoords[1] * dbScale, blockGrid_pixels))/dbScale;
+
+    A2 = computeTriangleAreaByHeron( 
+            square(x2 - x1) + square(y2 - y1),
+            square(x3 - x2) + square(y3 - y2),
+            square(x1 - x3) + square(y1 - y3)
+        );
+
+    return (A1 + A2) ;
+}
+
+long getPolyClockSpeedFromAreaFraction(double maxClockSpeed, double minClockSpeed, double * trapCoords, double nominalArea,
+    double dbScale, double blockGrid_pixels ){
+
+
+    double thisClockSpeed = computeAreaOfOrderedQuadrilateral(trapCoords, dbScale, blockGrid_pixels) / nominalArea;
+
+    // printf("Area fraction %0.2f = %0.3f/%0.3f\n", thisClockSpeed, computeAreaOfOrderedQuadrilateral(trapCoords) , nominalArea);
+    if (thisClockSpeed > minClockSpeed){
+            thisClockSpeed = minClockSpeed;
+    }
+    if (thisClockSpeed < maxClockSpeed){
+        thisClockSpeed = maxClockSpeed;
+    }
+
+    long clockSpeed = (long) ((maxClockSpeed - thisClockSpeed)/(maxClockSpeed - minClockSpeed) * 65535);
+
+    return clockSpeed;
+}
+
 // Computes requisite clock speed to perform dose bias
 long getPolyClockSpeed(double dR1, double dRN, double dRn, double bias)
 {
@@ -546,12 +641,7 @@ long getPolyClockSpeed(double dR1, double dRN, double dRn, double bias)
     }
 
     long clockSpeed = (long)((maxClockSpeed - thisClockSpeed) / (maxClockSpeed - minClockSpeed) * 65535);
-
-    // if (clockSpeed < 0){
-    //     printf("WARNING: CLOCKSPEED NEGATIVE\n");
-    //     printf("dRN: %0.5f, dR1: %0.5f, dRn: %0.5f, bias: %0.3f\n", dRN, dR1, dRn, bias);
-    //     printf("maxClockSpeed: %0.5f, minClockSpeed: %0.5f, thisClockSpeed: %0.5f\n", maxClockSpeed, minClockSpeed, thisClockSpeed);
-    // }
+    
 
     return clockSpeed;
 }
@@ -709,51 +799,69 @@ int main(int argc, char **argv)
     int NoP = atoi(*(argv_test++));
     int IoP = atoi(*(argv_test++));
     //int zpID = atoi(*(argv_test++));
-    int layerNumber = atoi(*(argv_test++));
-    bool curl_on = false;
-    int nwaUnitSelection = atoi(*(argv_test++));
-    char *fileName = *argv_test;
+    double blockGrid_pm        = atof(*(argv_test++)); // block grid (WRV)
 
+
+    int layerNumber         = atoi(*(argv_test++));
+    bool curl_on            = false;
+    int nwaUnitSelection    = atoi(*(argv_test++));
+    char * fileName         = *argv_test;
+
+    // For WRV, block unit is passed in as nwa unit
+    if (File_format == 3) {
+        block_unit_size_pm = nwaUnitSelection; 
+    }
+
+    
     double lambda, bias_um;
     double NA_P = NA + sin(CRA);
     double D = 2 * abs(p) * tan(asin(NA_P));
 
     double nwaUnit = .004; // NWA unit for ARC file in [um/px]
-
-    switch (nwaUnitSelection)
-    {
-    case 0:
-        nwaUnit = 1; // not used
-        break;
-    case 1:
-        nwaUnit = 0.00175;
-        break;
-    case 2:
-        nwaUnit = 0.002;
-        break;
-    case 3:
-        nwaUnit = 0.0025;
-        break;
-    case 4:
-        nwaUnit = 0.004;
-        break;
-    case 5:
-        nwaUnit = 0.005;
-        break;
-    case 6:
-        nwaUnit = 0.006;
-        break;
-    case 7:
-        nwaUnit = 0.007;
-        break;
-    case 8:
-        nwaUnit = 0.008;
-        break;
+    
+    switch (nwaUnitSelection){
+        case 0:
+            nwaUnit = 1; // not used
+            break;
+        case 1:
+             nwaUnit = 0.00175;
+            break;
+        case 2:
+            nwaUnit = 0.002;
+            break;
+        case 3:
+            nwaUnit = 0.0025;
+            break;
+        case 4:
+            nwaUnit = 0.004;
+            break;
+        case 5:
+            nwaUnit = 0.005;
+            break;
+        case 6:
+            nwaUnit = 0.006;
+            break;
+        case 7:
+            nwaUnit = 0.007;
+            break;
+        case 8:
+            nwaUnit = 0.008;
+            break;
     }
 
     lambda = lambda_nm / 1000;
-    bias_um = bias_nm / 1000;
+    bias_um = bias_nm/1000;
 
+    double blockGrid_pixels = 0;
+    // WRV compute blockGrid in units of pixels:
+    if (blockGrid_pm >= block_unit_size_pm && blockGrid_pm > 0){
+        blockGrid_pixels = blockGrid_pm /   ((double) block_unit_size_pm);
+        printf("Rounding WRV pixels by \t\t= %d pixels\n", (int)roundf(blockGrid_pixels));
+    } else {
+        blockGrid_pixels = 0;
+    }
+    
+    
     printf("\nCreating zone plate:\nNA_P \t\t\t= %0.3f\n", NA_P);
     printf("NA_child \t\t= %f \n", NA);
     printf("lambda \t\t\t= %0.3f nm\n", lambda_nm);
@@ -767,6 +875,11 @@ int main(int argc, char **argv)
         printf("Weight \t\t\t= %f waves\n", orders[j + nZerns]);
     }
 
+
+    printf("WRV block grid \t = %g\n", blockGrid_pm);
+    printf("BlockGrid pixels \t = %d\n", (int)roundf(blockGrid_pixels));
+
+    
     printf("tilted angle beta \t= %g in radian\n", beta);
     printf("Max zone phase error\t= lambda/%d\n", (int)(1 / zTol));
     printf("Zone plate diameter \t= %0.2f um\n", D);
@@ -834,7 +947,12 @@ int main(int argc, char **argv)
     FILE *supportTextFile = NULL;
     double dbscale = 0; // db unit to microns
     int numBlocksOnSide = 1;
-    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, RCM = 0, tR1, tR2, f, pNA, RN, rNp, rNq, RNp1, dRN, minDose, maxDose, doseBias, zpTiltOffsetX, zpTiltOffsetY, zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
+    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, 
+                x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, 
+                RCM = 0, tR1, tR2, f, pNA, RN, rNp, rNq, RNp1, dRN, 
+                Rnpa2, Rnma2, tR1pa, tR1ma, tR2pa, tR2ma,
+                minDose, maxDose, doseBias,  zpTiltOffsetX, zpTiltOffsetY,
+                zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
     double pupilCoordinates[2];
 
     long totalPoly = 0;
@@ -930,17 +1048,18 @@ int main(int argc, char **argv)
     for (int n = 1; n <= N; n++)
     {
         //Compute initial R at an arbitrary angle.  This will seed information regarding RoC for zone tol:
-        rGuess = sqrt(n * lambda * f);
-        rGuessp1 = sqrt((n + 1) * lambda * f);
-        Rn = secantSolve(rGuess, 0, n, p, q, 0, lambda, beta, virtualObject);
-        Rnp1 = secantSolve(rGuessp1, 0, n + 1, p, q, 0, lambda, beta, virtualObject);
-        dr = Rnp1 - Rn;
-
-        // Write to support text file
-        clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
-        if (File_format == 2)
+        rGuess     = sqrt(n*lambda*f);
+        rGuessp1   = sqrt((n + 1)*lambda*f);
+        Rn         = secantSolve(rGuess, 0, n, p, q, 0, lambda, beta, virtualObject);
+        Rnp1       = secantSolve(rGuessp1, 0, n + 1, p, q, 0, lambda, beta, virtualObject);
+        dr         = Rnp1 - Rn;
+        
+        // Write to support text file, may deprecate this shortly
+        if(File_format == 2) {
+            clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
             writeSupportTxtZoneDose(clockSpeed, n, Rn, supportTextFile);
-
+        }
+    
         // If buttresses are specified, condition segment width on zone parity
         buttressWidth = 0;
         // ButtressWidth is the width of the buttressed zone segment. Gap is the space in between - technically, the actual buttress
@@ -984,11 +1103,21 @@ int main(int argc, char **argv)
         alphaBT = buttressWidth / Rn;
 
         // Set alpha to the tighter of the two constraints
-        if ((buttressWidth != 0 && alphaBT < alphaZT) || isGapZone)
+        if ( (buttressWidth != 0 && alphaBT < alphaZT) ){
             alpha = alphaBT;
-        else
-            alpha = alphaZT;
+        }
+        else {
+            if (buttressWidth == 0){
+                alpha = alphaZT;
+            } else {
 
+                // round this to nearest mulltiple
+                int alphaRatio = (alphaBT / alphaZT) + 1;
+                alpha = alphaBT * 1.01 / ((double) alphaRatio);
+            }
+        }
+        
+        // printf("alphaBT: %0.3f, alphaZT: %0.3f, alpha: %0.3f, isGapZone: %d\n", alphaBT, alphaZT, alpha, (int) isGapZone);
         //For dealing with mixed conditions above
         arcStart = -1;
 
@@ -1068,6 +1197,19 @@ int main(int argc, char **argv)
                 }
             }
 
+            // Use initial R as seeds for each subsequent compuptation of zone radii
+            Rn   = secantSolve(Rn, currentAngle, n, p, q, phase, lambda, beta, virtualObject);
+            Rnp1 = secantSolve(Rnp1, currentAngle, n + 1, p, q, phase, lambda, beta, virtualObject);
+            
+            // Compute CM to optimized trap to arc and trap coords
+            dr  = Rnp1 - Rn;
+            RCM = (Rnp1*Rnp1*Rnp1 - Rn*Rn*Rn) / (Rnp1*Rnp1 - Rn*Rn)  * 2/3 * sin(alpha)/alpha;
+            //RCM = (Rn + dr/2)*sin(alpha)/alpha; // CM of arc: center trap on arc CM rather than matching
+            
+            // Solve at +/- alpha/2
+            Rnpa2 = secantSolve(Rn, currentAngle + alpha/2, n, p, q, phase, lambda, beta, virtualObject);
+            Rnma2 = secantSolve(Rn, currentAngle - alpha/2, n, p, q, phase, lambda, beta, virtualObject);
+
 
             // Rotate zone plate by CRA azimuth
             drawAngle = currentAngle + CRAAz;
@@ -1084,37 +1226,55 @@ int main(int argc, char **argv)
                     exportArc(Rn + bias_um / 2, dr - bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
                 }
             }
-            else
-            { // GDS or WRV format
-
-                // recompute clockspeed, useful if zone width is varying by angle
-                clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
-
-                if (isGapZone)
-                {
-                    tR1 = (RCM - dr / 2) * 1 / cos(alpha / 2) - bias_um / 2;
-                    tR2 = (RCM + dr / 2) * 1 / cos(alpha / 2) + bias_um / 2;
-                }
-                else
-                {
-                    tR1 = (RCM - dr / 2) * 1 / cos(alpha / 2) + bias_um / 2;
-                    tR2 = (RCM + dr / 2) * 1 / cos(alpha / 2) - bias_um / 2;
+            else { // GDS or WRV format
+                
+                
+                
+                if (isGapZone){
+                    tR1 = (RCM - dr/2)*1/cos(alpha/2) - bias_um/2;
+                    tR2 = (RCM + dr/2)*1/cos(alpha/2) + bias_um/2;
+                } else {
+                    tR1 = (RCM - dr/2)*1/cos(alpha/2) + bias_um/2;
+                    tR2 = (RCM + dr/2)*1/cos(alpha/2) - bias_um/2;
                 }
 
+                // Compute corrected radii at the edges of trap instead of center:
+                tR1ma = tR1 + (Rnma2 - Rn);
+                tR1pa = tR1 + (Rnpa2 - Rn);
+                tR2ma = tR2 + (Rnma2 - Rn);
+                tR2pa = tR2 + (Rnpa2 - Rn);
+  
+                // Coordinates of trap
+                double trapCoords_um[8];
+                    trapCoords_um[0] = (tR1ma*cos(drawAngle - alpha/2) + offsetX);
+                    trapCoords_um[1] = (tR1ma*sin(drawAngle - alpha/2) + offsetY);
+                    trapCoords_um[2] = (tR1pa*cos(drawAngle + alpha/2) + offsetX);
+                    trapCoords_um[3] = (tR1pa*sin(drawAngle + alpha/2) + offsetY);
+                    trapCoords_um[4] = (tR2pa*cos(drawAngle + alpha/2) + offsetX);
+                    trapCoords_um[5] = (tR2pa*sin(drawAngle + alpha/2) + offsetY);
+                    trapCoords_um[6] = (tR2ma*cos(drawAngle - alpha/2) + offsetX);
+                    trapCoords_um[7] = (tR2ma*sin(drawAngle - alpha/2) + offsetY);
+            
+                // Coordinates rounded to pixel scale
                 long trapCoords[10];
-                trapCoords[0] = (long)dbscale * (tR1 * cos(drawAngle - alpha / 2) + offsetX);
-                trapCoords[1] = (long)dbscale * (tR1 * sin(drawAngle - alpha / 2) + offsetY);
-                trapCoords[2] = (long)dbscale * (tR1 * cos(drawAngle + alpha / 2) + offsetX);
-                trapCoords[3] = (long)dbscale * (tR1 * sin(drawAngle + alpha / 2) + offsetY);
-                trapCoords[4] = (long)dbscale * (tR2 * cos(drawAngle + alpha / 2) + offsetX);
-                trapCoords[5] = (long)dbscale * (tR2 * sin(drawAngle + alpha / 2) + offsetY);
-                trapCoords[6] = (long)dbscale * (tR2 * cos(drawAngle - alpha / 2) + offsetX);
-                trapCoords[7] = (long)dbscale * (tR2 * sin(drawAngle - alpha / 2) + offsetY);
-                trapCoords[8] = (long)dbscale * (tR1 * cos(drawAngle - alpha / 2) + offsetX);
-                trapCoords[9] = (long)dbscale * (tR1 * sin(drawAngle - alpha / 2) + offsetY);
+                    trapCoords[0] = (long) dbscale*trapCoords_um[0];
+                    trapCoords[1] = (long) dbscale*trapCoords_um[1];
+                    trapCoords[2] = (long) dbscale*trapCoords_um[2];
+                    trapCoords[3] = (long) dbscale*trapCoords_um[3];
+                    trapCoords[4] = (long) dbscale*trapCoords_um[4];
+                    trapCoords[5] = (long) dbscale*trapCoords_um[5];
+                    trapCoords[6] = (long) dbscale*trapCoords_um[6];
+                    trapCoords[7] = (long) dbscale*trapCoords_um[7];
+                    trapCoords[8] = (long) dbscale*trapCoords_um[0];
+                    trapCoords[9] = (long) dbscale*trapCoords_um[1];
 
+
+                // compute clockspeed by area fraction:
+                // clockSpeed = getPolyClockSpeedFromAreaFraction(1/maxDose, 1/minDose, trapCoords_um, alpha * RCM * dr, dbscale, blockGrid_pixels);
+                clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
+            
                 // Export shape
-                exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed);
+                exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed, blockGrid_pixels);
             }
 
             trapCount++;
@@ -1239,7 +1399,8 @@ int main(int argc, char **argv)
             trapCoords[9] = (long)dbscale * (offsetY + sin(azRot) * qXCoords[k] + cos(azRot) * qYCoords[k]);
 
             // Export shape
-            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535);
+            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535, blockGrid_pixels);
+
         }
     }
 

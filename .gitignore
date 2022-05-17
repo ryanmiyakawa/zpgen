@@ -3,5 +3,7 @@ src/.vscode/*
 src/zpGenPlus
 src/zpGenPlus.dSYM
 *.gds
+src/*.gds
+
 *.wrv
 test-scripts/test-files/*

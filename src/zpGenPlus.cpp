@@ -18,6 +18,8 @@
 
 using namespace std;
 
+
+
 int nChooseK(int n, int k)
 {
     if (k == 0)
@@ -258,6 +260,35 @@ void exportArc(double R, double dR, double theta, double dTheta, double dose, do
             R / nwaUnit, fmod((theta * 180 / M_PI), 360), dR / nwaUnit, dTheta * 180 / M_PI,
             offsetX / nwaUnit, offsetY / nwaUnit, 0., 0., dose);
 }
+
+void exportArcGTX(double R, double dR, double theta, double dTheta, double dose, double nwaUnit,
+               double offsetX, double offsetY, FILE *outputFile)
+{
+    
+    /**
+     * @brief 
+        Offset    X LSW 400
+        Offset    Y LSW 400
+
+        Circle Diameter Outside LSW 390
+        Circle Diameter Inside LSW 100
+
+        Circle Angle Start MSW 0
+        Circle Angle Finish MSW 30000
+        Activate CIRCLE Pie Ring Merge
+     */
+
+    fprintf(outputFile, "Offset    X LSW %f", offsetX);
+    fprintf(outputFile, "Offset    Y LSW %f", offsetY);
+    fprintf(outputFile, "Circle Diameter Outside LSW %f", R + dR);
+    fprintf(outputFile, "Circle Diameter Inside LSW %f", R);
+    fprintf(outputFile, "Circle Angle Start MSW %f", theta);
+    fprintf(outputFile, "Circle Angle Finish MSW %f", theta + dTheta);
+    fprintf(outputFile, "Activate CIRCLE Pie Ring Merge\n");
+
+
+}
+
 
 
 void exportPolygon(long * coords, unsigned char * polyPre, unsigned char * polyPost,
@@ -662,6 +693,83 @@ void initWRV(FILE *outputFile, double minDose, double maxDose, long block_size, 
     fprintf(outputFile, "vepdef 20 %ld %ld\n", block_size, block_size);
 }
 
+void initGTX(FILE *outputFile)
+{
+     double beamStepSize = 10;
+    /**
+     * @brief 
+        GTX "1.0.0"
+
+        HEADER
+        Title                 "Generic Pattern Format, c RAITH nanofabrication"
+        Version               "1.44 UPG"
+        MainFieldResolution   0.00100000,0.00100000 ! (um)
+        SubFieldResolution    0.00050000,0.00050000 ! (um)
+        Resolution            10,10 ! 0.01000000,0.01000000 (um) 
+        !  BeamStepSize          20,20 ! 0.01000000,0.01000000 (um) 
+        BeamStepSize          10,10 ! 0.05, 0.05
+        PatternSize           50000,50000 ! 500.00000000,500.00000000 (um) 
+        MainFieldSize         50000,50000 ! 500.00000000,500.00000000 (um) 
+        SubFieldSize          420,420 ! 4.20000000,4.20000000 (um) 
+        HighTension           100000000 ! (mV) 
+        SubFieldPlacement     LOWERLEFT
+        MainFieldPlacement    MEANDER
+        FractureStyle         SUBFIELD HIGHRESOLUTION ! SMOOTHMODE SPIRALMODE
+        NrMainFieldBits       20
+        NrSubFieldBits        14
+        WorkLevel             HIGH
+        HeaderOffset          512
+        PatternName           "alt_circle_merge.gpf"
+        END
+     * 
+     */
+    fprintf(outputFile, "GTX \"1.0.0\"\n\n");
+    fprintf(outputFile, "HEADER\n");
+    fprintf(outputFile, "Title                 \"Generic Pattern Format, c RAITH nanofabrication\"\n");
+    fprintf(outputFile, "Version               \"1.44 UPG\"\n");
+    fprintf(outputFile, "MainFieldResolution   0.00100000,0.00100000 ! (um)\n");
+    fprintf(outputFile, "SubFieldResolution    0.00050000,0.00050000 ! (um)\n");
+    fprintf(outputFile, "Resolution            10,10 ! 0.01000000,0.01000000 (um) \n");
+    fprintf(outputFile, "BeamStepSize          %f,%f ! 0.05, 0.05", beamStepSize, beamStepSize);
+    fprintf(outputFile, "PatternSize           50000,50000 ! 500.00000000,500.00000000 (um) \n");
+    fprintf(outputFile, "MainFieldSize         50000,50000 ! 500.00000000,500.00000000 (um) \n");
+    fprintf(outputFile, "SubFieldSize          420,420 ! 4.20000000,4.20000000 (um) \n");
+    fprintf(outputFile, "HighTension           100000000 ! (mV) \n");
+    fprintf(outputFile, "SubFieldPlacement     LOWERLEFT\n");
+    fprintf(outputFile, "MainFieldPlacement    MEANDER\n");
+    fprintf(outputFile, "FractureStyle         SUBFIELD HIGHRESOLUTION ! SMOOTHMODE SPIRALMODE\n");
+    fprintf(outputFile, "NrMainFieldBits       20\n");
+    fprintf(outputFile, "NrSubFieldBits        14\n");
+    fprintf(outputFile, "WorkLevel             HIGH\n");
+    fprintf(outputFile, "HeaderOffset          512\n");
+    fprintf(outputFile, "PatternName           \"zone_plate.gpf\"\n");
+    fprintf(outputFile, "END\n\n");
+
+    // For now let's also write the field data
+    /**
+     * @brief 
+FIELD 1,1
+  MoveStage 0
+
+  Frequency MSW 0x8000 
+  Frequency LSW 0x0
+
+  MSF 10 ! 20
+  Main   X LSW 274288 
+  Main   Y LSW 274288 
+     * 
+     */
+
+    fprintf(outputFile, "FIELD 1,1\n");
+    fprintf(outputFile, "  MoveStage 0\n\n");
+    fprintf(outputFile, "  Frequency MSW 0x8000 \n");
+    fprintf(outputFile, "  Frequency LSW 0x0\n\n");
+    fprintf(outputFile, "  MSF %f ! 20\n", beamStepSize);
+    fprintf(outputFile, "  Main   X LSW 0 \n");
+    fprintf(outputFile, "  Main   Y LSW 0 \n\n");
+
+}
+
 void initARC(double centerX, double centerY, double nwaUnit, FILE *outputFile)
 {
     fprintf(outputFile, "[HEADER]\n");
@@ -715,6 +823,13 @@ void renderARC(FILE *outputFile)
 }
 void renderWRV(FILE *outputFile)
 {
+    fclose(outputFile);
+}
+void renderGTX(FILE *outputFile)
+{
+    fprintf(outputFile, "Activate Merge\n");
+    fprintf(outputFile, "END\n");
+
     fclose(outputFile);
 }
 
@@ -909,7 +1024,7 @@ int main(int argc, char **argv)
 
     if (File_format == 0)
     {
-        printf("Save as Arc information\n");
+        printf("Building NWA for nanowriter\n");
     }
     else if (File_format == 1)
     {
@@ -922,11 +1037,15 @@ int main(int argc, char **argv)
     }
     else if (File_format == 3)
     {
-        printf("Save as wrv file \n");
+        printf("Building WRV file \n");
+    }
+    else if (File_format == 4)
+    {
+        printf("Building GTX file\n");
     }
     else
     {
-        printf("Save as zone number & dosage information in txt file \n");
+        printf("unknown file format %d\n", File_format);
     }
 
     if (NoP == 1 && IoP != 1)
@@ -1033,6 +1152,14 @@ int main(int argc, char **argv)
             printf("Cannot open file.\n");
 
         initWRV(outputFile, minDose, maxDose, block_size, block_unit_size_pm);
+        break;
+
+    case 4:                                     // GTX format
+        dbscale = 1000000 / block_unit_size_pm; // db unit to microns
+        if ((outputFile = fopen(strcat(fileName, ".gtx"), "wb")) == NULL)
+            printf("Cannot open file.\n");
+
+        initGTX(outputFile);
         break;
     }
 
@@ -1226,6 +1353,17 @@ int main(int argc, char **argv)
                     exportArc(Rn + bias_um / 2, dr - bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
                 }
             }
+            else if (File_format == 4){ // GTX
+                doseBias = dr / (dr - bias_um); // Inverse of zone area bias
+                if (isGapZone)
+                {
+                    exportArcGTX(Rn - bias_um / 2, dr + bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+                }
+                else
+                {
+                    exportArcGTX(Rn + bias_um / 2, dr - bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+                }
+            }
             else { // GDS or WRV format
                 
                 
@@ -1342,7 +1480,7 @@ int main(int argc, char **argv)
     } // End zone loop
 
     // Write obscuration.  Note: cannot write obscuration in arcs presently
-    if (Opposite_Tone && obscurationSigma > 0 && File_format != 0)
+    if (Opposite_Tone && obscurationSigma > 0 && File_format != 0 && File_format != 4)
     {
         printf("Writing obscuration with sigma: %0.2f\n", obscurationSigma);
         printf("Obscuration anamorphic factor: %0.2f\n", anamorphicFac);
@@ -1418,6 +1556,9 @@ int main(int argc, char **argv)
         break;
     case 3: // WRV
         renderWRV(outputFile);
+        break;
+    case 4: // GTX
+        renderGTX(outputFile);
         break;
     }
 

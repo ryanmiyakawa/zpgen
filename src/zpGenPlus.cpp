@@ -291,13 +291,13 @@ void exportArcGTX(double R, double dR, double theta, double dTheta, double dose,
         Activate CIRCLE Pie Ring Merge
      */
 
-    fprintf(outputFile, "Offset    X LSW %f", offsetX);
-    fprintf(outputFile, "Offset    Y LSW %f", offsetY);
-    fprintf(outputFile, "Circle Diameter Outside LSW %f", R + dR);
-    fprintf(outputFile, "Circle Diameter Inside LSW %f", R);
-    fprintf(outputFile, "Circle Angle Start MSW %f", theta);
-    fprintf(outputFile, "Circle Angle Finish MSW %f", theta + dTheta);
-    fprintf(outputFile, "Activate CIRCLE Pie Ring Merge\n");
+    fprintf(outputFile, "Offset    X LSW %f\n", offsetX);
+    fprintf(outputFile, "Offset    Y LSW %f\n", offsetY);
+    fprintf(outputFile, "Circle Diameter Outside LSW %f\n", R + dR);
+    fprintf(outputFile, "Circle Diameter Inside LSW %f\n", R);
+    fprintf(outputFile, "Circle Angle Start MSW %f\n", theta);
+    fprintf(outputFile, "Circle Angle Finish MSW %f\n", theta + dTheta);
+    fprintf(outputFile, "Activate CIRCLE Pie Ring Merge\n\n");
 
 
 }

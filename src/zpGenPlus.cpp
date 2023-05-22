@@ -588,7 +588,7 @@ void getZPCoordinatesFromFrequency(double kx, double ky, double P, double *coord
     coordinates[1] = d * ky / cos(beta);
 }
 
-void getPupilCoordinatesFromZPCoordinates(double x, double yp, double P, double *coordinates, double beta, double NA, double CRA)
+void getPupilCoordinatesFromZPCoordinates(double x, double yp, double P, double *coordinates, double beta, double NA, double CRA, double anamorphicFac)
 {
     // Transform [xp, yp, zp] to x-z rectilinear coords:
 
@@ -602,7 +602,7 @@ void getPupilCoordinatesFromZPCoordinates(double x, double yp, double P, double 
     double ky = y / absK;
 
     coordinates[0] = kx / NA;
-    coordinates[1] = (ky - sin(CRA)) / NA;
+    coordinates[1] = anamorphicFac * (ky - sin(CRA)) / NA;
 }
 
 /**
@@ -1401,7 +1401,7 @@ int main(int argc, char **argv)
              *      x => x cos(beta)
              *      p => p - x sin(beta)
              */
-            getPupilCoordinatesFromZPCoordinates(x, y, p, pupilCoordinates, beta, NA, CRA);
+            getPupilCoordinatesFromZPCoordinates(x, y, p, pupilCoordinates, beta, NA, CRA, anamorphicFac);
             cx = pupilCoordinates[0];
             cy = pupilCoordinates[1];
 
@@ -1426,23 +1426,25 @@ int main(int argc, char **argv)
             x = RCM * cos(currentAngle);
             y = RCM * sin(currentAngle);
 
-            getPupilCoordinatesFromZPCoordinates(x, y, p, pupilCoordinates, beta, NA, CRA);
+            getPupilCoordinatesFromZPCoordinates(x, y, p, pupilCoordinates, beta, NA, CRA, anamorphicFac);
             cx = pupilCoordinates[0];
             cy = pupilCoordinates[1];
 
              // Accept or reject trap based on pupil boundaries and obscuration
-            if (anamorphicFac != 1 && anamorphicFac > 0){ // Anamorphic case
-                if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)) {
-                    currentAngle = currentAngle + alpha;
-                    continue;
-                }
-            } else{ // isomorphic case
-                if (!bIsInGeometry(cx, cy, obscurationSigma, CRA))
+            // if (anamorphicFac != 1 && anamorphicFac > 0){ // Anamorphic case
+            //     if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)) {
+            //         currentAngle = currentAngle + alpha;
+            //         continue;
+            //     }
+            // } else{ // isomorphic case
+            
+            // 2023.05.22 Treating anamorphic by scaling pupil coordinates
+            if (!bIsInGeometry(cx, cy, obscurationSigma, CRA))
                 {
                     currentAngle = currentAngle + alpha;
                     continue;
                 }
-            }
+            // }
 
             // Apply custom mask
             if (customMaskIdx != 0) {

@@ -1440,11 +1440,11 @@ int main(int argc, char **argv)
             
             // 2023.05.22 Treating anamorphic by scaling pupil coordinates
             if (!bIsInGeometry(cx, cy, obscurationSigma))
-                {
-                    currentAngle = currentAngle + alpha;
-                    continue;
-                }
+            {
+                currentAngle = currentAngle + alpha;
+                continue;
             }
+            
 
             // Apply custom mask
             if (customMaskIdx != 0) {

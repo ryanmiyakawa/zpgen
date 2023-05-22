@@ -462,7 +462,7 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx)
         case 18: // KT iso 
             r = sqrt(cx*cx + cy*cy);    
 
-            return r < 1 && ((cx + 1.145)*(cx + 1.145) + cy*cy < 0.409*0.409);   
+            return r < 1 && !((cx + 1.145)*(cx + 1.145) + cy*cy < 0.409*0.409);   
             break;
 
     }

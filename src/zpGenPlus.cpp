@@ -459,7 +459,7 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx)
             r = sqrt(cx*cx + cy*cy);            
             return  abs(atan2(cy, cx)) < M_1_PI/180;// && (r <= 0.99);
             return 0;
-        case 18: // KLA circular pupil
+        case 18: // KT iso 
             r = sqrt(cx*cx + cy*cy);    
 
             return r < 1 && ((cx + 1.145)*(cx + 1.145) + cy*cy < 0.409*0.409);   

@@ -348,6 +348,13 @@ double getPhaseTerm(double cx, double cy, double *orders, int nZerns, double ZPC
     return ph;
 }
 
+bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double obscurationSigma)
+{
+
+    return (square(cy) * square(anamorphicFac) + square(cx) < 1) &&
+           ((square(cy) * square(anamorphicFac) + square(cx)) >= square(obscurationSigma));
+}
+
 bool bIsInGeometry(double cx, double cy, double obscurationSigma, double CRA)
 {
     double r = sqrt(cx * cx + cy * cy);
@@ -494,12 +501,7 @@ double customPhase(double cx, double cy, int customMaskIdx)
     return 0;
 }
 
-bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double obscurationSigma)
-{
 
-    return (square(cy) * square(anamorphicFac) + square(cx) < 1) &&
-           ((square(cy) * square(anamorphicFac) + square(cx)) >= square(obscurationSigma));
-}
 
 double objectiveFn(double r, double th, double N, double p, double q,
                    double phase, double lambda, double beta, int virtualObject)
@@ -1437,13 +1439,18 @@ int main(int argc, char **argv)
             //         continue;
             //     }
             // } else{ // isomorphic case
+
+            if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)) {
+                currentAngle = currentAngle + alpha;
+                continue;
+            }
             
             // 2023.05.22 Treating anamorphic by scaling pupil coordinates
-            if (!bIsInGeometry(cx, cy, obscurationSigma, CRA))
-                {
-                    currentAngle = currentAngle + alpha;
-                    continue;
-                }
+            // if (!bIsInGeometry(cx, cy, obscurationSigma, CRA))
+            //     {
+            //         currentAngle = currentAngle + alpha;
+            //         continue;
+            //     }
             // }
 
             // Apply custom mask

@@ -274,7 +274,7 @@ void exportArc(double R, double dR, double theta, double dTheta, double dose, do
             offsetX / nwaUnit, offsetY / nwaUnit, 0., 0., dose);
 }
 
-void exportArcGTX(double R, double dR, double theta, double dTheta, double dose, double nwaUnit,
+void exportArcGTX(double R, double dR, double theta, double dTheta, double dose, double block_unit_size_um,
                double offsetX, double offsetY, FILE *outputFile)
 {
     
@@ -291,13 +291,16 @@ void exportArcGTX(double R, double dR, double theta, double dTheta, double dose,
         Activate CIRCLE Pie Ring Merge
      */
 
-    fprintf(outputFile, "Offset    X LSW %f\n", offsetX);
-    fprintf(outputFile, "Offset    Y LSW %f\n", offsetY);
-    fprintf(outputFile, "Circle Diameter Outside LSW %f\n", R + dR);
-    fprintf(outputFile, "Circle Diameter Inside LSW %f\n", R);
-    fprintf(outputFile, "Circle Angle Start MSW %f\n", theta);
-    fprintf(outputFile, "Circle Angle Finish MSW %f\n", theta + dTheta);
-    fprintf(outputFile, "Activate CIRCLE Pie Ring Merge\n\n");
+    // printf(" offsetX: %f, blokc unit: %f, ratio: %f, cast: %ld", offsetX, block_unit_size_um, offsetX/block_unit_size_um, (long) (offsetX/block_unit_size_um));
+
+    fprintf(outputFile, "\tOffset    X LSW %ld\n", (long)(offsetX / block_unit_size_um));
+    fprintf(outputFile, "\tOffset    Y LSW %ld\n", (long)(offsetY / block_unit_size_um));
+    fprintf(outputFile, "\tCircle Diameter Outside LSW %ld\n", (long)(2*(R + dR) / block_unit_size_um));
+    fprintf(outputFile, "\tCircle Diameter Inside LSW %ld\n", (long)(2*R / block_unit_size_um));
+    fprintf(outputFile, "\tCircle Angle Start MSW %ld\n", (long)(1000 * fmod(theta * 180 / M_PI, 360))); // milidegrees
+    fprintf(outputFile, "\tCircle Angle Finish MSW %ld\n", (long)(1000 * fmod(180 / M_PI * (theta + dTheta), 360))); // milidegrees
+    // fprintf(outputFile, "Activate CIRCLE Pie Ring Merge\n\n");
+    fprintf(outputFile, "\tActivate CIRCLE Pie Ring\n\n");
 
 
 }
@@ -456,6 +459,11 @@ bool bIsInCustomMask(double cx, double cy, int customMaskIdx)
             r = sqrt(cx*cx + cy*cy);            
             return  abs(atan2(cy, cx)) < M_1_PI/180;// && (r <= 0.99);
             return 0;
+        case 18: // KLA circular pupil
+            r = sqrt(cx*cx + cy*cy);    
+
+            return r < 1 && ((cx + 1.145)*(cx - 1.145) + cy*cy < 0.409*0.409);   
+            break;
 
     }
     return true;
@@ -783,7 +791,7 @@ void initWRV(FILE * outputFile, double minRelDose, double maxRelDose, long block
     fprintf(outputFile, "vepdef 20 %ld %ld\n", block_size, block_size);
 }
 
-void initGTX(FILE *outputFile)
+void initGTX(FILE *outputFile, double subFieldResolution, long offsetX, long offsetY)
 {
      double beamStepSize = 10;
     /**
@@ -818,9 +826,9 @@ void initGTX(FILE *outputFile)
     fprintf(outputFile, "Title                 \"Generic Pattern Format, c RAITH nanofabrication\"\n");
     fprintf(outputFile, "Version               \"1.44 UPG\"\n");
     fprintf(outputFile, "MainFieldResolution   0.00100000,0.00100000 ! (um)\n");
-    fprintf(outputFile, "SubFieldResolution    0.00050000,0.00050000 ! (um)\n");
+    fprintf(outputFile, "SubFieldResolution    %f,%f ! (um)\n", subFieldResolution, subFieldResolution);
     fprintf(outputFile, "Resolution            10,10 ! 0.01000000,0.01000000 (um) \n");
-    fprintf(outputFile, "BeamStepSize          %f,%f ! 0.05, 0.05", beamStepSize, beamStepSize);
+    fprintf(outputFile, "BeamStepSize          %f,%f ! 0.05, 0.05 \n", beamStepSize, beamStepSize);
     fprintf(outputFile, "PatternSize           50000,50000 ! 500.00000000,500.00000000 (um) \n");
     fprintf(outputFile, "MainFieldSize         50000,50000 ! 500.00000000,500.00000000 (um) \n");
     fprintf(outputFile, "SubFieldSize          420,420 ! 4.20000000,4.20000000 (um) \n");
@@ -850,14 +858,15 @@ FIELD 1,1
      * 
      */
 
-    fprintf(outputFile, "FIELD 1,1\n");
-    fprintf(outputFile, "  MoveStage 0\n\n");
-    fprintf(outputFile, "  Frequency MSW 0x8000 \n");
-    fprintf(outputFile, "  Frequency LSW 0x0\n\n");
-    fprintf(outputFile, "  MSF %f ! 20\n", beamStepSize);
-    fprintf(outputFile, "  Main   X LSW 0 \n");
-    fprintf(outputFile, "  Main   Y LSW 0 \n\n");
 
+
+    fprintf(outputFile, "FIELD 1,1\n");
+    fprintf(outputFile, "\tMoveStage 0\n\n");
+    fprintf(outputFile, "\tFrequency MSW 0x8000 \n");
+    fprintf(outputFile, "\tFrequency LSW 0x0\n\n");
+    fprintf(outputFile, "\tMSF %f ! 20\n", beamStepSize);
+    fprintf(outputFile, "\tMain   X LSW %ld \n", offsetX);
+    fprintf(outputFile, "\tMain   Y LSW %ld \n", offsetY);
 }
 
 void initARC(double centerX, double centerY, double nwaUnit, FILE *outputFile)
@@ -917,7 +926,7 @@ void renderWRV(FILE *outputFile)
 }
 void renderGTX(FILE *outputFile)
 {
-    fprintf(outputFile, "Activate Merge\n");
+    // fprintf(outputFile, "Activate Merge\n");
     fprintf(outputFile, "END\n");
 
     fclose(outputFile);
@@ -1013,10 +1022,13 @@ int main(int argc, char **argv)
     int nwaUnitSelection    = atoi(*(argv_test++));
     char * fileName         = *argv_test;
 
-    // For WRV, block unit is passed in as nwa unit
-    if (File_format == 3) {
+    // For WRV or GTX  block unit is passed in as nwa unit
+    if (File_format == 3 || File_format == 4) {
         block_unit_size_pm = nwaUnitSelection; 
+
+        printf("block_unit_size_pm = %ld", block_unit_size_pm);
     }
+    
 
     
     double lambda, bias_um;
@@ -1196,13 +1208,21 @@ int main(int argc, char **argv)
         offsetY = zpTiltOffsetY;
     }
 
-    if (File_format == 3)
+    if (File_format == 3 || File_format == 4)
     {                                  // WRV: shift by one half block size
         numBlocksOnSide = layerNumber; // For WRV files we send num blocks on the GDSLayer input
 
         offsetX += numBlocksOnSide * block_size * block_unit_size_pm / 2 / 1000000;
         offsetY += numBlocksOnSide * block_size * block_unit_size_pm / 2 / 1000000;
     }
+
+    if (File_format == 4)
+    { // GTX: shift by one half block size
+        offsetX +=  block_size / 2 ;
+        offsetY +=  block_size / 2 ;
+    }
+
+
 
     // Compute number of zones in this zone plate using RN path length difference
     int N = 2 * (int)((rNp - p + virtualObject * (rNq - q)) / lambda);
@@ -1264,10 +1284,10 @@ int main(int argc, char **argv)
             break;
         case 4: // GTX
             dbscale = 1000000/block_unit_size_pm; // db unit to microns
-            if ((outputFile = fopen(strcat(fileName, ".wrv"), "wb")) == NULL)
+            if ((outputFile = fopen(strcat(fileName, ".gtx"), "wb")) == NULL)
                 printf("Cannot open file.\n");
             
-            initGTX(outputFile);
+            initGTX(outputFile, block_unit_size_pm/1000000, (long)offsetX, (long)offsetY);
             break;
     }
 
@@ -1465,11 +1485,11 @@ int main(int argc, char **argv)
                 doseBias = dr / (dr - bias_um); // Inverse of zone area bias
                 if (isGapZone)
                 {
-                    exportArcGTX(Rn - bias_um / 2, dr + bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+                    exportArcGTX(Rn - bias_um / 2, dr + bias_um, drawAngle, alpha, doseBias, ((double)(block_unit_size_pm))/1000000, 0, 0, outputFile);
                 }
                 else
                 {
-                    exportArcGTX(Rn + bias_um / 2, dr - bias_um, drawAngle, alpha, doseBias, nwaUnit, offsetX, offsetY, outputFile);
+                    exportArcGTX(Rn + bias_um / 2, dr - bias_um, drawAngle, alpha, doseBias, ((double)(block_unit_size_pm))/1000000, 0, 0, outputFile);
                 }
             }
             else { // GDS or WRV format

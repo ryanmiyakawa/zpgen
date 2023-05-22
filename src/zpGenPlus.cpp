@@ -355,17 +355,10 @@ bool bIsInAnamorphicPupil(double cx, double cy, double anamorphicFac, double obs
            ((square(cy) * square(anamorphicFac) + square(cx)) >= square(obscurationSigma));
 }
 
-bool bIsInGeometry(double cx, double cy, double obscurationSigma, double CRA)
+bool bIsInGeometry(double cx, double cy, double obscurationSigma)
 {
-    double r = sqrt(cx * cx + cy * cy);
-    if (CRA == 0)
-    {
-        return (r >= obscurationSigma);
-    }
-    else
-    {
-        return (r >= obscurationSigma && r <= 1.002);
-    }
+     return (square(cy)  + square(cx) < 1) &&
+           ((square(cy)  + square(cx)) >= square(obscurationSigma));
 }
 
 // Specify custom mask inputs
@@ -1440,18 +1433,18 @@ int main(int argc, char **argv)
             //     }
             // } else{ // isomorphic case
 
-            if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)) {
-                currentAngle = currentAngle + alpha;
-                continue;
-            }
+            // if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)) {
+            //     currentAngle = currentAngle + alpha;
+            //     continue;
+            // }
             
             // 2023.05.22 Treating anamorphic by scaling pupil coordinates
-            // if (!bIsInGeometry(cx, cy, obscurationSigma, CRA))
-            //     {
-            //         currentAngle = currentAngle + alpha;
-            //         continue;
-            //     }
-            // }
+            if (!bIsInGeometry(cx, cy, obscurationSigma))
+                {
+                    currentAngle = currentAngle + alpha;
+                    continue;
+                }
+            }
 
             // Apply custom mask
             if (customMaskIdx != 0) {

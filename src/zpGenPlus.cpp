@@ -937,25 +937,23 @@ void notifyJoanie(float progress, int zpID)
     system(stringBuffer);
 }
 
-int main(int argc, char **argv)
-{
-    clock_t begin = clock();
 
-    if (argc == 1)
-    {
-        printf("No input parameters!!! \n");
-        system("PAUSE");
-        return 0;
-    }
-    char **argv_test;
-    argv_test = argv + 1;
-    double zTol = atof(*(argv_test++));
-    double lambda_nm = atof(*(argv_test++));
-    double p = atof(*(argv_test++));
-    double q = atof(*(argv_test++));
+
+void makeZP(double zTol, double lambda_nm, double p, double q, double obscurationSigma, 
+    double NA, int nZerns, double *orders, int customMaskIdx, double beta, double CRAAz, 
+    double CRA, double anamorphicFac, double ZPCPhase, double APD, double APD_window, 
+    double ZPCR2, double ZPCR1, double bias_nm, int File_format, int Opposite_Tone, 
+    int FSIdx, double buttressGapWidth, double buttressPeriod, int setToCenter, 
+    long block_size, int NoP, int IoP, double blockGrid_pm, int layerNumber, int nwaUnitSelection,
+    char * fileName)
+{
+
+    clock_t begin = clock();
+    long block_unit_size_pm = 500;
+    double blockGrid_um = blockGrid_pm/1000000;
+
 
     // Need p and q to be positive
-
     // Need p to define NA, assume NA is always defined on fast side
     int virtualObject = 0;
     if (abs(p) > abs(q))
@@ -973,49 +971,6 @@ int main(int argc, char **argv)
         printf("Detected Virtual swapped");
     }
 
-    double obscurationSigma = atof(*(argv_test++));
-    double NA = atof(*(argv_test++)); // Changed from p_na to anamorphicI
-    int nZerns = atoi(*(argv_test++));
-
-    double orders[2 * nZerns];
-    for (int k = 0; k < nZerns; k++)
-    {
-        orders[k] = atof(*(argv_test++));
-        orders[k + nZerns] = atof(*(argv_test++));
-    }
-
-    int customMaskIdx = atoi(*(argv_test++)); // Changed alpha to custom mask
-    double beta = atof(*(argv_test++));
-    double CRAAz = atof(*(argv_test++)) * M_PI / 180; // call in degrees
-    double CRA = atof(*(argv_test++)) * M_PI / 180;   // call in degrees
-    double anamorphicFac = atof(*(argv_test++));
-    double ZPCPhase = atof(*(argv_test++));
-    double APD = atof(*(argv_test++));
-    double APD_window = atof(*(argv_test++));
-    double ZPCR2 = atof(*(argv_test++));
-    double ZPCR1 = atof(*(argv_test++));
-    double bias_nm = atof(*(argv_test++));
-    int File_format = atof(*(argv_test++));
-    int Opposite_Tone = atof(*(argv_test++));
-    int FSIdx = atof(*(argv_test++));
-    double buttressGapWidth = atof(*(argv_test++));
-    double buttressPeriod = atof(*(argv_test++));
-    int setToCenter = atoi(*(argv_test++));
-    //1 million pixel with a pixel size 500 pm (0.5 nm)
-    // Thus it transfer to 500 um block size
-    long block_size = atol(*(argv_test++));
-    long block_unit_size_pm = 500;
-    int NoP = atoi(*(argv_test++));
-    int IoP = atoi(*(argv_test++));
-    //int zpID = atoi(*(argv_test++));
-    double blockGrid_pm        = atof(*(argv_test++)); // block grid (WRV)
-    double blockGrid_um = blockGrid_pm/1000000;
-
-
-    int layerNumber         = atoi(*(argv_test++));
-    bool curl_on            = false;
-    int nwaUnitSelection    = atoi(*(argv_test++));
-    char * fileName         = *argv_test;
 
     // For WRV or GTX  block unit is passed in as nwa unit
     if (File_format == 3 || File_format == 4) {
@@ -1154,7 +1109,6 @@ int main(int argc, char **argv)
     {
         printf("\nIndex of part has to be 1 if number of parts is 1 !\n");
         system("PAUSE");
-        return 0;
     }
     if (nwaUnitSelection > 0)
     {
@@ -1174,6 +1128,7 @@ int main(int argc, char **argv)
                 Rnpa2, Rnma2, tR1pa, tR1ma, tR2pa, tR2ma, tR1nb, tR2nb, tR1panb, tR1manb, tR2panb, tR2manb,
                 minRelDose, maxRelDose, doseBias, minAreaFraction, maxAreaFraction, minClockSpeed, maxClockSpeed,  zpTiltOffsetX, zpTiltOffsetY,
                 zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle;
+
     double pupilCoordinates[2];
 
     long totalPoly = 0;
@@ -1425,26 +1380,13 @@ int main(int argc, char **argv)
             cx = pupilCoordinates[0];
             cy = pupilCoordinates[1];
 
-             // Accept or reject trap based on pupil boundaries and obscuration
-            // if (anamorphicFac != 1 && anamorphicFac > 0){ // Anamorphic case
-            //     if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)) {
-            //         currentAngle = currentAngle + alpha;
-            //         continue;
-            //     }
-            // } else{ // isomorphic case
-
-            // if (!bIsInAnamorphicPupil(cx, cy, anamorphicFac, obscurationSigma)) {
-            //     currentAngle = currentAngle + alpha;
-            //     continue;
-            // }
-            
+             // Accept or reject trap based on pupil boundaries and obscuration     
             // 2023.05.22 Treating anamorphic by scaling pupil coordinates
             if (!bIsInGeometry(cx, cy, obscurationSigma))
             {
                 currentAngle = currentAngle + alpha;
                 continue;
             }
-            
 
             // Apply custom mask
             if (customMaskIdx != 0) {
@@ -1633,11 +1575,11 @@ int main(int argc, char **argv)
         {
             printf("Finished zone %d with %ld traps.  \tR_%d = %0.3f \n", n, trapCount, n, Rn);
         }
-        if (curl_on && n % 100 == 0)
-        {
-            float progress = ((float)n) / ((float)N);
-            notifyJoanie(progress, 1);
-        }
+        // if (curl_on && n % 100 == 0)
+        // {
+        //     float progress = ((float)n) / ((float)N);
+        //     notifyJoanie(progress, 1);
+        // }
 
     } // End zone loop
 
@@ -1729,8 +1671,73 @@ int main(int argc, char **argv)
     printf("Finished zone plate with %ld shapes\n", totalPoly);
     printf("\nZP Generation took: %0.3f seconds\n", elapsed_secs);
 
-    if (curl_on)
-        notifyJoanie(1, 1);
+    // if (curl_on)
+    //     notifyJoanie(1, 1);
 
+}
+
+
+// Primary Gateway
+int main(int argc, char **argv){
+     if (argc == 1)
+    {
+        printf("No input parameters!!! \n");
+        system("PAUSE");
+        return 0;
+    }
+    char **argv_test;
+    argv_test = argv + 1;
+
+    double zTol             = atof(*(argv_test++));
+    double lambda_nm        = atof(*(argv_test++));
+    double p                = atof(*(argv_test++));
+    double q                = atof(*(argv_test++));
+    double obscurationSigma = atof(*(argv_test++));
+    double NA               = atof(*(argv_test++)); // Changed from p_na to anamorphicI
+    int nZerns              = atoi(*(argv_test++));
+
+    double orders[2 * nZerns];
+    for (int k = 0; k < nZerns; k++)
+    {
+        orders[k] = atof(*(argv_test++));
+        orders[k + nZerns] = atof(*(argv_test++));
+    }
+
+    int customMaskIdx       = atoi(*(argv_test++)); // Changed alpha to custom mask
+    double beta             = atof(*(argv_test++));
+    double CRAAz            = atof(*(argv_test++)) * M_PI / 180; // call in degrees
+    double CRA              = atof(*(argv_test++)) * M_PI / 180;   // call in degrees
+    double anamorphicFac    = atof(*(argv_test++));
+    double ZPCPhase         = atof(*(argv_test++));
+    double APD              = atof(*(argv_test++));
+    double APD_window       = atof(*(argv_test++));
+    double ZPCR2            = atof(*(argv_test++));
+    double ZPCR1            = atof(*(argv_test++));
+    double bias_nm          = atof(*(argv_test++));
+    int File_format         = atof(*(argv_test++));
+    int Opposite_Tone       = atof(*(argv_test++));
+    int FSIdx               = atof(*(argv_test++));
+    double buttressGapWidth = atof(*(argv_test++));
+    double buttressPeriod   = atof(*(argv_test++));
+    int setToCenter         = atoi(*(argv_test++));
+    //1 million pixel with a pixel size 500 pm (0.5 nm)
+    // Thus it transfer to 500 um block size
+    long block_size         = atol(*(argv_test++));
+    int NoP                 = atoi(*(argv_test++));
+    int IoP                 = atoi(*(argv_test++));
+    double blockGrid_pm     = atof(*(argv_test++)); // block grid (WRV)
+
+
+    int layerNumber         = atoi(*(argv_test++));
+    int nwaUnitSelection    = atoi(*(argv_test++));
+    char * fileName         = *argv_test;
+
+    makeZP(zTol, lambda_nm, p, q, obscurationSigma, 
+                NA, nZerns, orders, customMaskIdx, beta, CRAAz, 
+                CRA, anamorphicFac, ZPCPhase, APD, APD_window, 
+                ZPCR2, ZPCR1, bias_nm, File_format, Opposite_Tone, 
+                FSIdx, buttressGapWidth, buttressPeriod, setToCenter, 
+                block_size, NoP, IoP, blockGrid_pm, layerNumber, nwaUnitSelection, 
+                fileName);
     return 0;
 }

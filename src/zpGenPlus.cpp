@@ -1573,7 +1573,7 @@ void makeZP(double zTol, double lambda_nm, double p, double q, double obscuratio
         }
         else
         {
-            printf("Finished zone %d with %ld traps.  \tR_%d = %0.3f \n", n, trapCount, n, Rn);
+            printf("Finished zone %d with %ld traps.  \tR_%d = %0.5f \n", n, trapCount, n, Rn);
         }
         // if (curl_on && n % 100 == 0)
         // {

@@ -1,0 +1,1 @@
+g++ -std=c++11 src/patternFileUtils.cpp src/zpUtils.cpp  src/zpGenHolo.cpp -o src/ZPGenHolo

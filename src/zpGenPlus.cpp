@@ -500,6 +500,7 @@ double objectiveFn(double r, double th, double N, double p, double q,
                    double phase, double lambda, double beta, int virtualObject)
 {
 
+
     double pp, qp, rp, zpTerm, phTerm, plTermP, plTermQ;
 
     pp = p - r * sin(beta) * sin(th);
@@ -521,7 +522,9 @@ double objectiveFn(double r, double th, double N, double p, double q,
     zpTerm = -N * lambda / 2;
     phTerm = phase * lambda;
 
-    return plTermP + virtualObject * plTermQ + zpTerm + phTerm;
+    // return plTermP + virtualObject * plTermQ + zpTerm + phTerm;
+    return plTermP +  plTermQ + zpTerm + phTerm;
+
 }
 
 double secantSolve(double dRGuess, double th, double N, double p, double q, double phase, double lambda, double beta, int virtualObject)

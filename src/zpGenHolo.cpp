@@ -75,11 +75,37 @@ double secantSolve(double dRGuess, double th, double N, double * p, double q0, d
 
 
 
-void makeZP(double zTol, double lambda_nm, double * p, double q,  double * k_0, double * bx, double * by, double obscurationSigma, 
-    double NA, int nZerns, double *orders, int customMaskIdx, double anamorphicFac, double ZPCPhase, double APD, double APD_window, 
-    double ZPCR2, double ZPCR1, double bias_nm, int File_format, int Opposite_Tone, 
-    int FSIdx, double buttressGapWidth, double buttressPeriod, 
-    long block_size, int NoP, int IoP, double blockGrid_pm, int layerNumber, int nwaUnitSelection,
+void makeZP(
+    double zTol, 
+    double lambda_nm, 
+    double * p, 
+    double q,  
+    double * k_0, 
+    double * bx, 
+    double * by, 
+    double obscurationSigma, 
+    double NA, 
+    int nZerns, 
+    double *orders, 
+    int customMaskIdx, 
+    double anamorphicFac, 
+    double ZPCPhase, 
+    double APD, 
+    double APD_window, 
+    double ZPCR2, 
+    double ZPCR1, 
+    double bias_nm, 
+    int File_format, 
+    int Opposite_Tone, 
+    int FSIdx, 
+    double buttressGapWidth, 
+    double buttressPeriod, 
+    long block_size, 
+    int NoP, 
+    int IoP, 
+    double blockGrid_pm, 
+    int layerNumber, 
+    int nwaUnitSelection,
     char * fileName)
 {
 
@@ -854,6 +880,8 @@ int main(int argc, char **argv){
     p[0]                   = atof(*(argv_test++));
     p[1]                   = atof(*(argv_test++));
     p[2]                   = atof(*(argv_test++));
+    q                = atof(*(argv_test++));
+
     k_0[0]                   = atof(*(argv_test++));
     k_0[1]                   = atof(*(argv_test++));
     k_0[2]                   = atof(*(argv_test++));
@@ -865,7 +893,6 @@ int main(int argc, char **argv){
     by[2]                  = atof(*(argv_test++));
 
 
-    q                = atof(*(argv_test++));
     obscurationSigma = atof(*(argv_test++));
     NA               = atof(*(argv_test++)); 
     nZerns              = atoi(*(argv_test++));
@@ -876,9 +903,6 @@ int main(int argc, char **argv){
         orders[i] = atof(*(argv_test++));
         orders[i + nZerns] = atof(*(argv_test++));
     }
-
-
-
 
     customMaskIdx       = atoi(*(argv_test++)); 
     anamorphicFac       = atof(*(argv_test++));

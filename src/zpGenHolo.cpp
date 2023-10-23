@@ -188,14 +188,14 @@ void makeZP(
     }
     
     
-    printf("NA \t\t= %f \n", NA);
+    printf("NA \t\t\t= %f \n", NA);
     printf("lambda \t\t\t= %0.3f nm\n", lambda_nm);
     printf("p \t\t\t= [%0.3f, %0.3f, %0.3f] um\n", p[0], p[1], p[2]);
     printf("image length \t\t= %g um\n", q);
 
     printf("ZP Normal \t\t\t= [%0.3f, %0.3f, %0.3f] \n", n_hat[0], n_hat[1], n_hat[2]);
-    printf("Incident k-vector \t\t\t= [%0.3f, %0.3f, %0.3f] \n", k_0[0], k_0[1], k_0[2]);
-    printf("ZP basis \t\t\t= {[%0.3f, %0.3f, %0.3f], [%0.3f, %0.3f, %0.3f]} \n", bx[0], bx[1], bx[2], by[0], by[1], by[2]);
+    printf("Incident k-vector \t= [%0.3f, %0.3f, %0.3f] \n", k_0[0], k_0[1], k_0[2]);
+    printf("ZP basis \t\t= {[%0.3f, %0.3f, %0.3f], [%0.3f, %0.3f, %0.3f]} \n", bx[0], bx[1], bx[2], by[0], by[1], by[2]);
 
 
     //Aberration order
@@ -206,7 +206,7 @@ void makeZP(
     }
 
 
-    printf("WRV block grid \t = %g\n", blockGrid_pm);
+    printf("WRV block grid \t\t = %g\n", blockGrid_pm);
     printf("BlockGrid pixels \t = %d\n", (int)roundf(blockGrid_pixels));
 
     
@@ -217,8 +217,8 @@ void makeZP(
     {
         printf("Apodized window \t= %f \n", APD_window);
     }
-    printf("Zone width bias \t\t= %f nm\n", bias_nm);
-    printf("Is Free Standing? \t\t= %d \n", FSIdx);
+    printf("Zone width bias \t= %f nm\n", bias_nm);
+    printf("Is Free Standing? \t= %d \n", FSIdx);
     printf("W\t\t\t= %f dr \n", buttressGapWidth);
     printf("T\t\t\t= %f dr \n", buttressPeriod);
     printf("Block size for wrv file: %ld\n", block_size);
@@ -228,11 +228,7 @@ void makeZP(
         printf("Tone swapped");
     }
     int wrv_split;
-    // if (D >= 500 && File_format == 3 && layerNumber == 1)
-    // {
-    //     wrv_split = 1;
-    //     printf("WARNING: WRV is overrunning blocksize");
-    // }
+
     printf("\n");
 
     if (File_format == 0)
@@ -241,7 +237,7 @@ void makeZP(
     }
     else if (File_format == 1)
     {
-        printf("Save as trapezoid information in txt file\n");
+        printf("GDS + text file \n");
     }
 
     else if (File_format == 2)
@@ -270,6 +266,8 @@ void makeZP(
     {
         printf("NWA unit selection is %d with value %0.5f.\n", nwaUnitSelection, nwaUnit);
     }
+
+    printf("Output file: %s\n", fileName);
 
     /*************************/
     // BEGIN NEW ZP CODE:
@@ -785,6 +783,8 @@ int main(int argc, char **argv){
     char * fileName;
 
 
+
+
     if (argc == 1)
     {
         printf("No input parameters!!! \n");
@@ -813,7 +813,7 @@ int main(int argc, char **argv){
 
         char * fileName;
 
-        int setting = 2;
+        int setting = 1;
         if (setting == 1){
             bx = tempBxFlat;
             by = tempByFlat;
@@ -870,6 +870,13 @@ int main(int argc, char **argv){
 
         return 0;
     }
+
+printf("Reading input params\n");
+
+
+    // return 0;
+
+
     char **argv_test;
     argv_test = argv + 1;
 
@@ -880,7 +887,7 @@ int main(int argc, char **argv){
     p[0]                   = atof(*(argv_test++));
     p[1]                   = atof(*(argv_test++));
     p[2]                   = atof(*(argv_test++));
-    q                = atof(*(argv_test++));
+    q                       = atof(*(argv_test++));
 
     k_0[0]                   = atof(*(argv_test++));
     k_0[1]                   = atof(*(argv_test++));
@@ -929,11 +936,38 @@ int main(int argc, char **argv){
     nwaUnitSelection    = atoi(*(argv_test++));
     fileName            = *argv_test;
 
-    makeZP(zTol, lambda_nm, p, q, k_0, bx, by, obscurationSigma, 
-                NA, nZerns, orders, customMaskIdx, anamorphicFac, ZPCPhase, APD, APD_window, 
-                ZPCR2, ZPCR1, bias_nm, File_format, Opposite_Tone, 
-                FSIdx, buttressGapWidth, buttressPeriod, 
-                block_size, NoP, IoP, blockGrid_pm, layerNumber, nwaUnitSelection, 
-                fileName);
+
+    makeZP(zTol, 
+        lambda_nm, 
+        p, 
+        q, 
+        k_0, 
+        bx, 
+        by, 
+        obscurationSigma, 
+        NA, 
+        nZerns, 
+        orders, 
+        customMaskIdx, 
+        anamorphicFac, 
+        ZPCPhase, 
+        APD, 
+        APD_window, 
+        ZPCR2, 
+        ZPCR1, 
+        bias_nm, 
+        File_format, 
+        Opposite_Tone, 
+        FSIdx, 
+        buttressGapWidth, 
+        buttressPeriod, 
+        block_size, 
+        NoP, 
+        IoP, 
+        blockGrid_pm, 
+        layerNumber, 
+        nwaUnitSelection, 
+        fileName);
+
     return 0;
 }

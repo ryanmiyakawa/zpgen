@@ -787,7 +787,7 @@ int main(int argc, char **argv){
 
         char * fileName;
 
-        int setting = 3;
+        int setting = 2;
         if (setting == 1){
             bx = tempBxFlat;
             by = tempByFlat;

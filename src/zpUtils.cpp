@@ -606,8 +606,8 @@ void zpRTh2PCCxCy(double R, double th, double * k_0, double * p, double * bx, do
     zpUxUy2XYZ(U, p, bx, by, r);
     zpCoord2KVector(r, k);
 
-    C[0] = (k[0] + k_0[0]) / NA;
-    C[1] = (k[1] + k_0[1]) / NA;
+    C[0] = (k[0] - k_0[0]) / NA;
+    C[1] = (k[1] - k_0[1]) / NA;
 }
 
 // Converts spatial frequency in space to a point defined by [ux, uy] in ZP coordinates using basis vectors {bx, by}

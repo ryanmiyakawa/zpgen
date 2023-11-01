@@ -426,9 +426,9 @@ void makeZP(
 
     for (int n = N_min; n <= N_max; n++)
     {
-        if (n == N_max){
-            printf("max n");
-        }
+        // if (n == N_max){
+        //     printf("max n");
+        // }
         // Compute initial R at an arbitrary angle.  This will seed information regarding RoC for zone tol:
         Rn          = secantSolve(rGuess, 0, n, p, q, bx, by, 0, lambda);
         Rnp1        = secantSolve(rGuessp1, 0, n + 1, p, q, bx, by, 0, lambda);
@@ -800,7 +800,7 @@ int main(int argc, char **argv){
         double zeroDouble[] = {0, 0};
         double zeroEmpty[] = {};
         double tempP[] = {0, 0, 100};
-
+        double tempPTilt[] = {500 * sin(6 * M_PI/180), 0, 500 * cos(6 * M_PI/180)};
 
         double tempBxFlat[] = {1, 0, 0};
         double tempBxTilt[] = {cos(6 * M_PI/180), 0, -sin(6 * M_PI/180)};
@@ -813,13 +813,15 @@ int main(int argc, char **argv){
 
         double * bx;
         double * by;
+        double * p;
         char str1[] = "debug0";
         char str2[] = "debugTilt";
         char str3[] = "debugOAxis";
 
         char * fileName;
+        p = tempP;
 
-        int setting = 3;
+        int setting = 4;
         if (setting == 1){
             bx = tempBxFlat;
             by = tempByFlat;
@@ -837,12 +839,20 @@ int main(int argc, char **argv){
             by = tempByFlat;
             fileName = str3;
         }
+        else if (setting == 4) {
+            // tilt 2
+            k_0 = tempKTilt;
+            bx = tempBxFlat;
+            by = tempByFlat;
+            fileName = str2;
+            p = tempPTilt;
+        }
 
         
         makeZP(
                 0.01, //zTol, 
                 13.5, //lambda_nm, 
-                tempP, // p
+                p, // p
                 100000, // q
                 k_0, //k, 
                 bx, //bx, 

@@ -306,6 +306,8 @@ void makeZP(
     double th = 0;
     double fx = 0, fy = 0;
     double opd = 0;
+    int tempN_min;
+    int tempN_max;
     double * fq = new double[2];
     int numPoints = 200;
     for (int i = 0; i < numPoints; i++){
@@ -319,12 +321,16 @@ void makeZP(
 
         // printf("th: %0.2f, opd: %0.3f\n", th, opd);
         
-        if ((int) opd < N_min){
-            N_min = (int) 2 * opd;
+        tempN_min = (int) 2 * opd;
+        tempN_max = (int) 2*opd + 1;
+
+        if (tempN_min < N_min){
+            N_min = tempN_min;
         }
-        if (opd > (double) N_max){
-            N_max = (int) 2*opd + 1;
+        if (tempN_max > N_max){
+            N_max = tempN_max;
         }
+       
     }
 
     printf("N_max: %d, N_min: %d\n", N_max, N_min);
@@ -793,7 +799,7 @@ int main(int argc, char **argv){
         double zeroTriple[] = {0, 0, 0};
         double zeroDouble[] = {0, 0};
         double zeroEmpty[] = {};
-        double tempP[] = {0, 0, 300};
+        double tempP[] = {0, 0, 100};
 
 
         double tempBxFlat[] = {1, 0, 0};
@@ -813,7 +819,7 @@ int main(int argc, char **argv){
 
         char * fileName;
 
-        int setting = 1;
+        int setting = 3;
         if (setting == 1){
             bx = tempBxFlat;
             by = tempByFlat;
@@ -842,7 +848,7 @@ int main(int argc, char **argv){
                 bx, //bx, 
                 by, //by, 
                 0, //obscurationSigma, 
-                0.0825, //NA, 
+                0.02, //NA, 
                 0, //nZerns, 
                 zeroEmpty, //orders, 
                 0, //customMaskIdx, 

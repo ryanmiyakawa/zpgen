@@ -1,1 +1,0 @@
-!gcc src/zpGenPlus.cpp -o dist/ZPGen

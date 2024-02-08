@@ -599,6 +599,7 @@ void zpRTh2PCCxCy(double R, double th, double * k_0, double * p, double * bx, do
     double uy = R * sin(th);
     double * k = new double[2]; 
     double * U = new double[2];
+    double * Cxy = new double[2];
     U[0] = ux;
     U[1] = uy;
 
@@ -606,8 +607,17 @@ void zpRTh2PCCxCy(double R, double th, double * k_0, double * p, double * bx, do
     zpUxUy2XYZ(U, p, bx, by, r);
     zpCoord2KVector(r, k);
 
-    C[0] = (k[0] - k_0[0]) / NA;
-    C[1] = (k[1] - k_0[1]) / NA;
+    Cxy[0] = (k[0] - k_0[0]) / NA;
+    Cxy[1] = (k[1] - k_0[1]) / NA;
+
+    // Determine in-plane angle of k by taking atan2(k[1],k[0]):
+    double k_azi = atan2(k_0[1], k_0[0]);
+
+    // Rotate C by k_azi:
+
+    C[0] = cos(k_azi) * Cxy[0] - sin(k_azi) * Cxy[1];
+    C[1] = sin(k_azi) * Cxy[0] + cos(k_azi) * Cxy[0];
+
 }
 
 // Converts spatial frequency in space to a point defined by [ux, uy] in ZP coordinates using basis vectors {bx, by}

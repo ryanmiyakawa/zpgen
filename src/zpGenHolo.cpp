@@ -116,6 +116,8 @@ void makeZP(
     lambda = lambda_nm / 1000;
     bias_um = bias_nm/1000;
 
+
+
     // Define plane normal
     double * n_hat = new double[3];
     crossProduct(bx, by, n_hat);
@@ -525,6 +527,7 @@ void makeZP(
 
         //  2) Use computed Rn and currentAngle to compute [cx,cy] to figure out phase and amplitude
             zpRTh2PCCxCy(Rn, currentAngle, k_0, p, bx, by, lambda, NA, PC);
+
             cx = PC[0];
             cy = PC[1]/anamorphicFac;
 

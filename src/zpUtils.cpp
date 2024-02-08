@@ -611,7 +611,7 @@ void zpRTh2PCCxCy(double R, double th, double * k_0, double * p, double * bx, do
     Cxy[1] = (k[1] - k_0[1]) / NA;
 
     // Determine in-plane angle of k by taking atan2(k[1],k[0]):
-    double k_azi = atan2(k_0[1], k_0[0]);
+    double k_azi = -atan2(k_0[1], k_0[0]);
 
     // Rotate C by k_azi:
 

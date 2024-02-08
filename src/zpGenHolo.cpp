@@ -528,8 +528,8 @@ void makeZP(
         //  2) Use computed Rn and currentAngle to compute [cx,cy] to figure out phase and amplitude
             zpRTh2PCCxCy(Rn, currentAngle, k_0, p, bx, by, lambda, NA, PC);
 
-            cx = PC[0];
-            cy = PC[1]/anamorphicFac;
+            cx = PC[0] * anamorphicFac;
+            cy = PC[1];
 
             // Compute phase terms in waves from Zernike polynomials and custom phase
             phase = getPhaseTerm(cx, cy, orders, nZerns, ZPCPhase, ZPCR1, ZPCR2);

@@ -708,6 +708,8 @@ void makeZP(
         double theta;
 
         double * fq_0 = new double[2];
+        double * c0 = new double[2];
+        double * rc0 = new double[2];
 
         double k_azi = -atan2(k_0[1], k_0[0]);
 
@@ -716,8 +718,14 @@ void makeZP(
             theta = thStep * i + M_PI / 2;
 
             // Convert pupil coordinates to zone plate coordinates
-            fq_0[0] = (NA * obscurationSigma * cos(theta) + k_0[0]) / lambda;
-            fq_0[1] = (NA * obscurationSigma * sin(theta) / anamorphicFac + k_0[1]) / lambda;
+            c0[0] = NA * obscurationSigma * cos(theta)/anamorphicFac;
+            c0[1] = NA * obscurationSigma * sin(theta);
+
+            rc0[0] = cos(k_azi) * c0[0] - sin(k_azi) * c0[1];
+            rc0[1] = sin(k_azi) * c0[0] + cos(k_azi) * c0[1];
+
+            fq_0[0] = (rc0[0]+ k_0[0]) / lambda;
+            fq_0[1] = (rc0[1] + k_0[1]) / lambda;
 
             // rotate these coordinates now:
             fq[0] = cos(k_azi) * fq_0[0] - sin(k_azi) * fq_0[1];

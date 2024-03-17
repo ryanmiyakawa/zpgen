@@ -614,7 +614,6 @@ void zpRTh2PCCxCy(double R, double th, double * k_0, double * p, double * bx, do
     double k_azi = -atan2(k_0[1], k_0[0]);
 
     // Rotate C by k_azi:
-
     C[0] = cos(k_azi) * Cxy[0] - sin(k_azi) * Cxy[1];
     C[1] = sin(k_azi) * Cxy[0] + cos(k_azi) * Cxy[1];
 

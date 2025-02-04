@@ -594,7 +594,7 @@ double xyz2OPL( double r_o[3], double p[3], double q0, double lambda){
 
 // Composite function useful for directly grabbing pupil coordinates
 // Takes a point defined in ZP coordinates and computes pupil coordinates
-void zpRTh2PCCxCy(double R, double th, double * k_0, double * p, double * bx, double * by, double lambda, double NA, double * C){
+void zpRTh2PCCxCy(double R, double th, double * k_0, double * p, double * bx, double * by, double lambda, double NA, double * C, double anamorphicAzimuth){
     double ux = R * cos(th);
     double uy = R * sin(th);
     double * k = new double[2]; 
@@ -611,7 +611,7 @@ void zpRTh2PCCxCy(double R, double th, double * k_0, double * p, double * bx, do
     Cxy[1] = (k[1] - k_0[1]) / NA;
 
     // Determine in-plane angle of k by taking atan2(k[1],k[0]):
-    double k_azi = -atan2(k_0[1], k_0[0]);
+    double k_azi = anamorphicAzimuth; // -atan2(k_0[1], k_0[0]);
 
     // Rotate C by k_azi:
     C[0] = cos(k_azi) * Cxy[0] - sin(k_azi) * Cxy[1];

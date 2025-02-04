@@ -71,7 +71,7 @@ void zpUxUy2XYZ( double U[3],  double p0[3],  double bx[3],  double by[3], doubl
 double xyz2OPL( double r[3], double p[3], double q0, double lambda);
 
 // Composite function useful for directly grabbing pupil coordinates
-void zpRTh2PCCxCy(double R, double th, double * k, double * p, double * bx, double * by, double lambda, double NA, double * C);
+void zpRTh2PCCxCy(double R, double th, double * k, double * p, double * bx, double * by, double lambda, double NA, double * C, double anamorphicAzimuth);
 void freq2zpUxUy(double * fq, double * n, double * p, double * bx, double * by, double lambda, double * U);
 
 #endif // ZP_UTILS_H

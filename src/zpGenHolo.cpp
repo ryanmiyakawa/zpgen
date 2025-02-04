@@ -89,6 +89,7 @@ void makeZP(
     double *orders, 
     int customMaskIdx, 
     double anamorphicFac, 
+    double anamorphicAzimuth, 
     double ZPCPhase, 
     double APD, 
     double APD_window, 
@@ -526,7 +527,7 @@ void makeZP(
             Rnp1        = secantSolve(Rnp1, currentAngle, n + 1, p, q, bx, by, 0, lambda);
 
         //  2) Use computed Rn and currentAngle to compute [cx,cy] to figure out phase and amplitude
-            zpRTh2PCCxCy(Rn, currentAngle, k_0, p, bx, by, lambda, NA, PC);
+            zpRTh2PCCxCy(Rn, currentAngle, k_0, p, bx, by, lambda, NA, PC, anamorphicAzimuth);
 
             cx = PC[0] * anamorphicFac;
             cy = PC[1];
@@ -711,7 +712,7 @@ void makeZP(
         double * c0 = new double[2];
         double * rc0 = new double[2];
 
-        double k_azi = -atan2(k_0[1], k_0[0]);
+        double k_azi = anamorphicAzimuth; // -atan2(k_0[1], k_0[0]);
 
         for (int i = 0; i < nObsPts; i++)
         {
@@ -729,10 +730,6 @@ void makeZP(
 
             fq[0] = (rc0[0]+ k_0[0]) / lambda;
             fq[1] = (rc0[1] + k_0[1]) / lambda;
-
-            // // rotate these coordinates now:
-            // fq[0] = cos(k_azi) * fq_0[0] - sin(k_azi) * fq_0[1];
-            // fq[1] = sin(k_azi) * fq_0[0] + cos(k_azi) * fq_0[1];
 
 
             freq2zpUxUy(fq, n_hat, p, bx, by, lambda, u);
@@ -808,7 +805,7 @@ int main(int argc, char **argv){
     double * bx = new double[3]; // Zone plate basis vector x
     double * by = new double[3]; // Zone plate basis vector y
 
-    double zTol, lambda_nm, q, obscurationSigma, NA, anamorphicFac, ZPCPhase, APD, APD_window, ZPCR2, ZPCR1, bias_nm,
+    double zTol, lambda_nm, q, obscurationSigma, NA, anamorphicFac, anamorphicAzimuth, ZPCPhase, APD, APD_window, ZPCR2, ZPCR1, bias_nm,
     buttressGapWidth, buttressPeriod, blockGrid_pm;
     int nZerns, customMaskIdx, File_format, Opposite_Tone, FSIdx, layerNumber, nwaUnitSelection, NoP, IoP;
     long block_size;
@@ -889,6 +886,7 @@ int main(int argc, char **argv){
                 zeroEmpty, //orders, 
                 0, //customMaskIdx, 
                 1, //anamorphicFac, 
+                0, // Anamorphic azimuth
                 0, //ZPCPhase, 
                 0, //APD, 
                 0, //APD_window, 
@@ -955,6 +953,7 @@ printf("Reading input params\n");
 
     customMaskIdx       = atoi(*(argv_test++)); 
     anamorphicFac       = atof(*(argv_test++));
+    anamorphicAzimuth   = atof(*(argv_test++));
     ZPCPhase            = atof(*(argv_test++));
     APD                 = atof(*(argv_test++));
     APD_window          = atof(*(argv_test++));
@@ -992,6 +991,7 @@ printf("Reading input params\n");
         orders, 
         customMaskIdx, 
         anamorphicFac, 
+        anamorphicAzimuth,
         ZPCPhase, 
         APD, 
         APD_window, 

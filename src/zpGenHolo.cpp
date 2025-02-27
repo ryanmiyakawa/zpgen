@@ -507,6 +507,11 @@ void makeZP(
         } else {
             startAngle = 0;
         }
+
+        if (customMaskIdx == 14){
+            startAngle += M_PI;
+        }
+
         currentAngle = startAngle;
 
         double gapZoneSize = 0;

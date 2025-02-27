@@ -98,6 +98,7 @@ void makeZP(
     double bias_nm, 
     int File_format, 
     int Opposite_Tone, 
+    int randomizeZoneStart,
     int FSIdx, 
     double buttressGapWidth, 
     double buttressPeriod, 
@@ -501,7 +502,11 @@ void makeZP(
         long trapCount = 0;
 
         //Loop through angle
-        startAngle = ((double)(rand() % 1000)) / 1000 * 2 * M_PI; // randomize start
+        if (randomizeZoneStart){
+            startAngle = ((double)(rand() % 1000)) / 1000 * 2 * M_PI; // randomize start
+        } else {
+            startAngle = 0;
+        }
         currentAngle = startAngle;
 
         double gapZoneSize = 0;
@@ -807,7 +812,7 @@ int main(int argc, char **argv){
 
     double zTol, lambda_nm, q, obscurationSigma, NA, anamorphicFac, anamorphicAzimuth, ZPCPhase, APD, APD_window, ZPCR2, ZPCR1, bias_nm,
     buttressGapWidth, buttressPeriod, blockGrid_pm;
-    int nZerns, customMaskIdx, File_format, Opposite_Tone, FSIdx, layerNumber, nwaUnitSelection, NoP, IoP;
+    int nZerns, customMaskIdx, File_format, Opposite_Tone, randomizeZoneStart, FSIdx, layerNumber, nwaUnitSelection, NoP, IoP;
     long block_size;
     char * fileName;
 
@@ -895,6 +900,7 @@ int main(int argc, char **argv){
                 10, //bias_nm, 
                 1, // GDS File_format, 
                 0, // Opposite_Tone, 
+                0, //randomizeZoneStart,
                 0, //FSIdx, 
                 0, //buttressGapWidth, 
                 0, //buttressPeriod, 
@@ -941,6 +947,7 @@ printf("Reading input params\n");
 
 
     obscurationSigma = atof(*(argv_test++));
+    
     NA               = atof(*(argv_test++)); 
     nZerns              = atoi(*(argv_test++));
 
@@ -961,7 +968,8 @@ printf("Reading input params\n");
     ZPCR1               = atof(*(argv_test++));
     bias_nm             = atof(*(argv_test++));
     File_format         = atof(*(argv_test++));
-    Opposite_Tone       = atof(*(argv_test++));
+    Opposite_Tone       = atoi(*(argv_test++));
+    randomizeZoneStart  = atoi(*(argv_test++));
     FSIdx               = atof(*(argv_test++));
     buttressGapWidth    = atof(*(argv_test++));
     buttressPeriod      = atof(*(argv_test++));
@@ -1000,6 +1008,7 @@ printf("Reading input params\n");
         bias_nm, 
         File_format, 
         Opposite_Tone, 
+        randomizeZoneStart,
         FSIdx, 
         buttressGapWidth, 
         buttressPeriod, 

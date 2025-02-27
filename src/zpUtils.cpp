@@ -280,7 +280,7 @@ double customPhase(double cx, double cy, int customMaskIdx)
         return 0;
 
     case 14: // spiral phase:
-        return atan2(cy, cx) + M_PI;
+        return atan2(cy, cx) - M_PI;
     }
     return 0;
 }

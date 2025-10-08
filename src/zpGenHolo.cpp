@@ -12,6 +12,7 @@
 #include <cmath>
 #include <ctime>
 #include <string.h>
+#include <vector>
 
 #include "zpUtils.h"
 #include "patternFileUtils.h"
@@ -428,6 +429,13 @@ void makeZP(
     rGuess = sqrt(N_min*lambda*f);
     rGuessp1 = sqrt((N_min + 1)*lambda*f);
 
+    // Vertex buffer for merged polygons
+    vector<double> innerEdgeVertices;  // Inner edge: march CCW around ring
+    vector<double> outerEdgeVertices;  // Outer edge: will be reversed to march CW
+    bool useMergedPolygon = false;
+    bool isFirstSegment = false;
+    long mergedClockSpeed = 0;
+
     for (int n = N_min; n <= N_max; n++)
     {
         // if (n == N_max){
@@ -497,6 +505,17 @@ void makeZP(
         // printf("alphaBT: %0.3f, alphaZT: %0.3f, alpha: %0.3f, isGapZone: %d\n", alphaBT, alphaZT, alpha, (int) isGapZone);
         //For dealing with mixed conditions above
         arcStart = -1;
+
+        // Determine if this zone should use merged polygon (continuous ring)
+        // TRUE for: FSIdx==0, or FSIdx==2 with odd zones (full zones)
+        // FALSE for: FSIdx==1, or FSIdx==2 with even zones (gap zones)
+        useMergedPolygon = (buttressWidth == 0) && !isGapZone;
+
+        if (useMergedPolygon) {
+            innerEdgeVertices.clear();
+            outerEdgeVertices.clear();
+            isFirstSegment = true;
+        }
 
         // Log trap count:
         long trapCount = 0;
@@ -640,9 +659,34 @@ void makeZP(
                     // Old way to compute clock speed, still working
                     clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
                  }
-            
-                // Export shape
-                exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed, blockGrid_pixels);
+
+                // Export shape: either accumulate vertices or write individual quad
+                if (useMergedPolygon) {
+                    // For merged polygon: accumulate inner and outer edges separately
+                    // Inner edge marches CCW, outer edge will be reversed to march CW back
+                    if (isFirstSegment) {
+                        // First segment: add starting vertices for both edges
+                        innerEdgeVertices.push_back(trapCoords[0]); // inner minus x
+                        innerEdgeVertices.push_back(trapCoords[1]); // inner minus y
+
+                        outerEdgeVertices.push_back(trapCoords[6]); // outer minus x
+                        outerEdgeVertices.push_back(trapCoords[7]); // outer minus y
+
+                        mergedClockSpeed = clockSpeed;
+                        isFirstSegment = false;
+                    }
+
+                    // All segments: add plus-side vertices
+                    innerEdgeVertices.push_back(trapCoords[2]); // inner plus x
+                    innerEdgeVertices.push_back(trapCoords[3]); // inner plus y
+
+                    outerEdgeVertices.push_back(trapCoords[4]); // outer plus x
+                    outerEdgeVertices.push_back(trapCoords[5]); // outer plus y
+
+                } else {
+                    // Non-merged mode: export individual quad (backward compatibility)
+                    exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed, blockGrid_pixels, 5);
+                }
             }
 
             trapCount++;
@@ -692,11 +736,42 @@ void makeZP(
 
         } // End angle loop
 
-        totalPoly += trapCount;
-        if (File_format == 0)
-            printf("Finished zone %d with %ld arcs\n", n, trapCount);
-        else
-            printf("Finished zone %d with %ld traps.  \tR_%d = %0.5f \n", n, trapCount, n, Rn);
+        // If we were accumulating vertices for a merged polygon, export it now
+        if (useMergedPolygon && innerEdgeVertices.size() > 0) {
+            // Construct complete polygon: inner edge (CCW) + outer edge (reversed = CW) + closure
+            vector<double> mergedPolygon;
+
+            // Add all inner edge vertices (already in CCW order)
+            for (size_t i = 0; i < innerEdgeVertices.size(); i++) {
+                mergedPolygon.push_back(innerEdgeVertices[i]);
+            }
+
+            // Add outer edge vertices in reverse order (makes them go CW)
+            for (int i = outerEdgeVertices.size() - 2; i >= 0; i -= 2) {
+                mergedPolygon.push_back(outerEdgeVertices[i]);     // x
+                mergedPolygon.push_back(outerEdgeVertices[i + 1]); // y
+            }
+
+            // Close polygon by repeating first vertex
+            mergedPolygon.push_back(innerEdgeVertices[0]);
+            mergedPolygon.push_back(innerEdgeVertices[1]);
+
+            // Convert vector to array for export
+            int numVertices = mergedPolygon.size() / 2;
+            double* mergedCoords = &mergedPolygon[0];
+
+            // Export the merged polygon
+            exportPolygon(mergedCoords, polyPre, polyPost, polyForm, outputFile, File_format, mergedClockSpeed, blockGrid_pixels, numVertices);
+
+            totalPoly += 1;  // One merged polygon instead of many quads
+            printf("Finished zone %d with 1 merged polygon (%d vertices, %ld segments)\n", n, numVertices, trapCount);
+        } else {
+            totalPoly += trapCount;
+            if (File_format == 0)
+                printf("Finished zone %d with %ld arcs\n", n, trapCount);
+            else
+                printf("Finished zone %d with %ld traps.  \tR_%d = %0.5f \n", n, trapCount, n, Rn);
+        }
 
 
     } // End zone loop
@@ -770,9 +845,9 @@ void makeZP(
 
             trapCoords[8] =  dbscale*(offsetX + cos(azRot)*qXCoords[k] - sin(azRot) * qYCoords[k]);
             trapCoords[9] =  dbscale*(offsetY + sin(azRot)*qXCoords[k] + cos(azRot) * qYCoords[k]);
-        
-            // Export shape
-            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535, blockGrid_pixels);
+
+            // Export shape (obscuration uses 4-vertex quads)
+            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535, blockGrid_pixels, 5);
 
         }
     }

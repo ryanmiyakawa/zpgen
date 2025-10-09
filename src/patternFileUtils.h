@@ -36,11 +36,11 @@ void exportArcGTX(double R, double dR, double theta, double dTheta, double dose,
 
 void encode32(long aCoord, char *cPart);
 
-void encodePoly32(double * coords, char * cCoords);
+void encodePoly32(double * coords, char * cCoords, int numCoords);
 
 
 void exportPolygon(double * coords, unsigned char * polyPre, unsigned char * polyPost,
-                   unsigned char * polyForm, FILE * outputFile, int File_format, long clockSpeed, double blockGrid_pixels);
+                   unsigned char * polyForm, FILE * outputFile, int File_format, long clockSpeed, double blockGrid_pixels, int numVertices);
 
 
 #endif // PATTERN_FILE_UTILS_H

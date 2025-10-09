@@ -12,6 +12,8 @@
 #include <cmath>
 #include <ctime>
 #include <string.h>
+#include <vector>
+#include <algorithm>
 
 #include "zpUtils.h"
 #include "patternFileUtils.h"
@@ -26,14 +28,14 @@ double objectiveFn(double R, double th, double N, double * p, double q0, double 
 {
     // Compute xyz space coordinates from (r,th)
     // U are the bx,by coordinates (in-plane coordinates)
-    double * U = new double[3];
+    double U[3];
     U[0] = R * cos(th);
     U[1] = R * sin(th);
     U[2] = 0;
 
     // Covert these back to xyz using basis vectors
-    double * r = new double[3];
-    
+    double r[3];
+
     zpUxUy2XYZ(U, p, bx, by, r);
 
     // Compute OPL in waves
@@ -337,7 +339,8 @@ void makeZP(
        
     }
 
-    printf("N_max: %d, N_min: %d\n", N_max, N_min);
+    int totalZones = (N_max - N_min) / 2 + 1;
+    printf("N_max: %d, N_min: %d (total zones: %d)\n", N_max, N_min, totalZones);
 
     if (File_format == 3 || File_format == 4)
     {                                  // WRV: shift by one half block size
@@ -382,36 +385,39 @@ void makeZP(
         case 0: // NWA (arc)
             if ((outputFile = fopen(strcat(fileName, ".nwa"), "wb")) == NULL)
                 printf("Cannot open file.\n");
+            setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
             initARC(offsetX, offsetY, nwaUnit, outputFile);
             break;
         case 1: // GDS
             dbscale = 10000; // db unit to microns
             if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
                 printf("Cannot open file.\n");
+            setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
             initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm, layerNumber);
             break;
         case 2://GDS + txt
             dbscale = 10000; // db unit to microns
             if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
                 printf("Cannot open file.\n");
+            setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
             initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm, layerNumber);
             if ((supportTextFile = fopen(strcat(fileName, ".txt"), "wb")) == NULL)
                 printf("Cannot open file.\n");
-            
+
             writeSupportTxtHeader(dR1, dRN, bias_um, supportTextFile);
             break;
         case 3: // WRV
             dbscale = 1000000/block_unit_size_pm; // db unit to microns
             if ((outputFile = fopen(strcat(fileName, ".wrv"), "wb")) == NULL)
                 printf("Cannot open file.\n");
-            
+            setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
             initWRV(outputFile, minRelDose, maxRelDose, block_size, block_unit_size_pm);
             break;
         case 4: // GTX
             dbscale = 1000000/block_unit_size_pm; // db unit to microns
             if ((outputFile = fopen(strcat(fileName, ".gtx"), "wb")) == NULL)
                 printf("Cannot open file.\n");
-            
+            setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
             initGTX(outputFile, block_unit_size_pm/1000000, (long)offsetX, (long)offsetY);
             break;
     }
@@ -428,8 +434,21 @@ void makeZP(
     rGuess = sqrt(N_min*lambda*f);
     rGuessp1 = sqrt((N_min + 1)*lambda*f);
 
+    // Pre-allocate fixed-size buffers for merged polygons (max 8000 segments = 16000 coords)
+    const int MAX_ZONE_COORDS = 16000;
+    double innerEdgeVertices[MAX_ZONE_COORDS];
+    double outerEdgeVertices[MAX_ZONE_COORDS];
+    int innerVertexCount = 0;
+    int outerVertexCount = 0;
+
     for (int n = N_min; n <= N_max; n++)
     {
+        bool useMergedPolygon = false;
+        bool isFirstSegment = false;
+        long mergedClockSpeed = 0;
+        innerVertexCount = 0;
+        outerVertexCount = 0;
+
         // if (n == N_max){
         //     printf("max n");
         // }
@@ -497,6 +516,15 @@ void makeZP(
         // printf("alphaBT: %0.3f, alphaZT: %0.3f, alpha: %0.3f, isGapZone: %d\n", alphaBT, alphaZT, alpha, (int) isGapZone);
         //For dealing with mixed conditions above
         arcStart = -1;
+
+        // Determine if this zone should use merged polygon (continuous ring)
+        // TRUE for: FSIdx==0, or FSIdx==2 with odd zones (full zones)
+        // FALSE for: FSIdx==1, or FSIdx==2 with even zones (gap zones)
+        useMergedPolygon = (buttressWidth == 0) && !isGapZone;
+
+        if (useMergedPolygon) {
+            isFirstSegment = true;
+        }
 
         // Log trap count:
         long trapCount = 0;
@@ -640,9 +668,34 @@ void makeZP(
                     // Old way to compute clock speed, still working
                     clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
                  }
-            
-                // Export shape
-                exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed, blockGrid_pixels);
+
+                // Export shape: either accumulate vertices or write individual quad
+                if (useMergedPolygon) {
+                    // For merged polygon: accumulate inner and outer edges separately
+                    // Inner edge marches CCW, outer edge will be reversed to march CW back
+                    if (isFirstSegment) {
+                        // First segment: add starting vertices for both edges
+                        innerEdgeVertices[innerVertexCount++] = trapCoords[0]; // inner minus x
+                        innerEdgeVertices[innerVertexCount++] = trapCoords[1]; // inner minus y
+
+                        outerEdgeVertices[outerVertexCount++] = trapCoords[6]; // outer minus x
+                        outerEdgeVertices[outerVertexCount++] = trapCoords[7]; // outer minus y
+
+                        mergedClockSpeed = clockSpeed;
+                        isFirstSegment = false;
+                    }
+
+                    // All segments: add plus-side vertices
+                    innerEdgeVertices[innerVertexCount++] = trapCoords[2]; // inner plus x
+                    innerEdgeVertices[innerVertexCount++] = trapCoords[3]; // inner plus y
+
+                    outerEdgeVertices[outerVertexCount++] = trapCoords[4]; // outer plus x
+                    outerEdgeVertices[outerVertexCount++] = trapCoords[5]; // outer plus y
+
+                } else {
+                    // Non-merged mode: export individual quad (backward compatibility)
+                    exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed, blockGrid_pixels, 5);
+                }
             }
 
             trapCount++;
@@ -692,11 +745,132 @@ void makeZP(
 
         } // End angle loop
 
-        totalPoly += trapCount;
-        if (File_format == 0)
-            printf("Finished zone %d with %ld arcs\n", n, trapCount);
-        else
-            printf("Finished zone %d with %ld traps.  \tR_%d = %0.5f \n", n, trapCount, n, Rn);
+        // If we were accumulating vertices for a merged polygon, export it now
+        if (useMergedPolygon && innerVertexCount > 0) {
+            // Close the ring by adding the first segment's minus-side vertices to the end
+            // This connects the last segment back to the first segment
+            innerEdgeVertices[innerVertexCount++] = innerEdgeVertices[0];  // inner_0 minus x
+            innerEdgeVertices[innerVertexCount++] = innerEdgeVertices[1];  // inner_0 minus y
+            outerEdgeVertices[outerVertexCount++] = outerEdgeVertices[0];  // outer_0 minus x
+            outerEdgeVertices[outerVertexCount++] = outerEdgeVertices[1];  // outer_0 minus y
+
+            // Calculate total vertices to determine if we need to split
+            int innerVertices = innerVertexCount / 2;
+            int outerVertices = outerVertexCount / 2;
+            int totalVertices = innerVertices + outerVertices + 1;  // +1 for closing vertex
+
+            // GDS format supports max 200 vertices per polygon
+            const int MAX_GDS_VERTICES = 200;
+            int numPolygons = 0;
+
+            if (totalVertices <= MAX_GDS_VERTICES) {
+                // Simple case: export as single polygon
+                // Construct complete polygon: inner edge (CCW) + outer edge reversed (CW) + closure
+                double mergedPolygon[MAX_ZONE_COORDS * 2];  // Temp buffer on stack
+                int mergedIdx = 0;
+
+                // Add all inner edge vertices (already in CCW order)
+                for (int i = 0; i < innerVertexCount; i++) {
+                    mergedPolygon[mergedIdx++] = innerEdgeVertices[i];
+                }
+
+                // Add outer edge vertices in reverse order (makes them go CW)
+                for (int i = outerVertexCount - 2; i >= 0; i -= 2) {
+                    mergedPolygon[mergedIdx++] = outerEdgeVertices[i];     // x
+                    mergedPolygon[mergedIdx++] = outerEdgeVertices[i + 1]; // y
+                }
+
+                // Close polygon by repeating first vertex
+                mergedPolygon[mergedIdx++] = innerEdgeVertices[0];
+                mergedPolygon[mergedIdx++] = innerEdgeVertices[1];
+
+                exportPolygon(mergedPolygon, polyPre, polyPost, polyForm, outputFile, File_format, mergedClockSpeed, blockGrid_pixels, totalVertices);
+                numPolygons = 1;
+            } else {
+                // Complex case: need to split into multiple arc segments
+                // Each segment will be a quad strip covering part of the ring
+
+                // Calculate how many segments we can fit per polygon (leaving room for closure)
+                int segmentsPerPoly = (MAX_GDS_VERTICES - 2) / 2;  // Each segment adds 2 vertices (plus side)
+                int totalSegments = trapCount;
+                numPolygons = (totalSegments + segmentsPerPoly - 1) / segmentsPerPoly;  // Ceiling division
+
+                // Stack-allocated arc polygon buffer
+                double arcPolygon[MAX_GDS_VERTICES * 2];
+
+                // Export each arc segment as a separate polygon
+                for (int polyIdx = 0; polyIdx < numPolygons; polyIdx++) {
+                    int startSeg = polyIdx * segmentsPerPoly;
+                    int endSeg = std::min(startSeg + segmentsPerPoly, (int)totalSegments);
+
+                    int arcIdx = 0;
+
+                    // Add inner edge vertices for this arc (CCW)
+                    for (int seg = startSeg; seg < endSeg; seg++) {
+                        int innerIdx = seg * 2;  // Each segment has 2 inner vertices (minus and plus)
+                        arcPolygon[arcIdx++] = innerEdgeVertices[innerIdx];      // minus x
+                        arcPolygon[arcIdx++] = innerEdgeVertices[innerIdx + 1];  // minus y
+                    }
+                    // Add final plus-side vertex
+                    int finalInnerIdx = (endSeg - 1) * 2 + 2;
+                    arcPolygon[arcIdx++] = innerEdgeVertices[finalInnerIdx];
+                    arcPolygon[arcIdx++] = innerEdgeVertices[finalInnerIdx + 1];
+
+                    // Add outer edge vertices for this arc (reversed = CW)
+                    for (int seg = endSeg - 1; seg >= startSeg; seg--) {
+                        int outerIdx = seg * 2 + 2;  // Plus-side vertex
+                        arcPolygon[arcIdx++] = outerEdgeVertices[outerIdx];
+                        arcPolygon[arcIdx++] = outerEdgeVertices[outerIdx + 1];
+                    }
+                    // Add final minus-side vertex
+                    int finalOuterIdx = startSeg * 2;
+                    arcPolygon[arcIdx++] = outerEdgeVertices[finalOuterIdx];
+                    arcPolygon[arcIdx++] = outerEdgeVertices[finalOuterIdx + 1];
+
+                    // Close the arc polygon
+                    arcPolygon[arcIdx++] = arcPolygon[0];
+                    arcPolygon[arcIdx++] = arcPolygon[1];
+
+                    int arcVertices = arcIdx / 2;
+                    exportPolygon(arcPolygon, polyPre, polyPost, polyForm, outputFile, File_format, mergedClockSpeed, blockGrid_pixels, arcVertices);
+                }
+            }
+
+            totalPoly += numPolygons;
+
+            // Smart progress printing: throttle output for large zone plates
+            int printInterval = 1;
+            if (totalZones > 500) printInterval = 100;
+            else if (totalZones > 100) printInterval = 10;
+
+            bool shouldPrint = ((n - N_min) % (printInterval * 2) == 0) || (n == N_max);
+
+            if (shouldPrint) {
+                if (numPolygons == 1) {
+                    printf("Finished zone %d with 1 merged polygon (%d vertices, %ld segments)\n", n, totalVertices, trapCount);
+                } else {
+                    printf("Finished zone %d with %d arc polygons (%d total vertices, %ld segments)\n", n, numPolygons, totalVertices, trapCount);
+                }
+                fflush(outputFile);  // Flush file buffer periodically
+            }
+        } else {
+            totalPoly += trapCount;
+
+            // Smart progress printing: throttle output for large zone plates
+            int printInterval = 1;
+            if (totalZones > 500) printInterval = 100;
+            else if (totalZones > 100) printInterval = 10;
+
+            bool shouldPrint = ((n - N_min) % (printInterval * 2) == 0) || (n == N_max);
+
+            if (shouldPrint) {
+                if (File_format == 0)
+                    printf("Finished zone %d with %ld arcs\n", n, trapCount);
+                else
+                    printf("Finished zone %d with %ld traps.  \tR_%d = %0.5f \n", n, trapCount, n, Rn);
+                fflush(outputFile);  // Flush file buffer periodically
+            }
+        }
 
 
     } // End zone loop
@@ -770,9 +944,9 @@ void makeZP(
 
             trapCoords[8] =  dbscale*(offsetX + cos(azRot)*qXCoords[k] - sin(azRot) * qYCoords[k]);
             trapCoords[9] =  dbscale*(offsetY + sin(azRot)*qXCoords[k] + cos(azRot) * qYCoords[k]);
-        
-            // Export shape
-            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535, blockGrid_pixels);
+
+            // Export shape (obscuration uses 4-vertex quads)
+            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535, blockGrid_pixels, 5);
 
         }
     }

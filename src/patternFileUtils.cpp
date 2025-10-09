@@ -347,9 +347,9 @@ void encode32(long aCoord, char *cPart)
     cPart[3] = (aCoord)&255;
 }
 
-void encodePoly32(double * coords, char * cCoords){
+void encodePoly32(double * coords, char * cCoords, int numCoords){
     char cPart[4];
-    for (int k = 0; k < 10; k++){
+    for (int k = 0; k < numCoords; k++){
         encode32((long) coords[k], cPart);
         for (int m = 0; m < 4; m++){
             cCoords[k*4 + m] = cPart[m];
@@ -360,18 +360,35 @@ void encodePoly32(double * coords, char * cCoords){
 
 
 void exportPolygon(double * coords, unsigned char * polyPre, unsigned char * polyPost,
-                   unsigned char * polyForm, FILE * outputFile, int File_format, long clockSpeed, double blockGrid_pixels){
+                   unsigned char * polyForm, FILE * outputFile, int File_format, long clockSpeed, double blockGrid_pixels, int numVertices){
     switch (File_format){
         case 1:
         case 2:
-            char cCoords[40];
+        {
+            // numVertices includes the closing vertex (first vertex repeated)
+            // Each vertex has x,y coords = 2 values, 4 bytes each
+            int numCoords = numVertices * 2;
+            int coordBufferSize = numCoords * 4;
+            int recordLength = 4 + coordBufferSize;
+
+            // Create dynamic polyForm header with correct record length
+            unsigned char dynamicPolyForm[4];
+            dynamicPolyForm[0] = (recordLength >> 8) & 0xFF;
+            dynamicPolyForm[1] = recordLength & 0xFF;
+            dynamicPolyForm[2] = 16;  // XY record type
+            dynamicPolyForm[3] = 3;   // Four-byte signed integer
+
+            char* cCoords = new char[coordBufferSize];
             fwrite(polyPre, sizeof(char), 16, outputFile);
-            fwrite(polyForm, sizeof(char), 4, outputFile);
-            encodePoly32(coords, cCoords);
-            fwrite(cCoords, sizeof(char), 40, outputFile);
+            fwrite(dynamicPolyForm, sizeof(char), 4, outputFile);
+            encodePoly32(coords, cCoords, numCoords);
+            fwrite(cCoords, sizeof(char), coordBufferSize, outputFile);
             fwrite(polyPost, sizeof(char), 4, outputFile);
+            delete[] cCoords;
             break;
+        }
         case 3:
+            // WRV format only handles 4-vertex quads
             fractureAndWriteWRVPoly(coords, outputFile, clockSpeed, blockGrid_pixels);
             break;
         }

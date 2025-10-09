@@ -6,36 +6,36 @@
 # This should generate merged polygons (one per zone instead of many quads)
 
 ../dist/ZPGenHolo \
-  0.01      `# zTol - zone tolerance (lambda/100)` \
-  13.5      `# lambda_nm - wavelength in nm` \
-  0 0 100   `# p vector (object position) - on axis, 100 um away` \
-  100000    `# q - image distance (100 mm)` \
-  0 0 1     `# k_0 vector (illumination direction) - normal incidence` \
-  1 0 0     `# bx basis vector - x aligned` \
-  0 1 0     `# by basis vector - y aligned` \
-  0         `# obscurationSigma - no obscuration` \
-  0.01      `# NA - small numerical aperture for quick test` \
+  0.0100    `# zTol - zone tolerance (lambda/100)` \
+  13.5000   `# lambda_nm - wavelength in nm` \
+  0.000000 0.000000 500.000000   `# p vector (object position) - 500 um away` \
+  1000000.0000  `# q - image distance (1 meter)` \
+  0.000000 0.000000 1.000000     `# k_0 vector (illumination direction) - normal incidence` \
+  1.000000 0.000000 0.000000     `# bx basis vector - x aligned` \
+  0.000000 1.000000 0.000000     `# by basis vector - y aligned` \
+  0.0000    `# obscurationSigma - no obscuration` \
+  0.0200    `# NA - small numerical aperture for quick test` \
   0         `# nZerns - no Zernike aberrations` \
   0         `# customMaskIdx - no custom mask` \
-  1         `# anamorphicFac - no anamorphism` \
-  0         `# anamorphicAzimuth` \
-  0         `# ZPCPhase - no phase contrast` \
-  0         `# APD - no apodization` \
+  1.0000    `# anamorphicFac - no anamorphism` \
+  -0.0000   `# anamorphicAzimuth` \
+  0.0000    `# ZPCPhase - no phase contrast` \
+  1.0000    `# APD - apodization (?)` \
   0         `# APD_window` \
-  0         `# ZPCR2` \
-  0         `# ZPCR1` \
-  10        `# bias_nm - 10 nm bias` \
-  2         `# File_format - GDS + txt` \
+  0.0000    `# ZPCR2` \
+  0.0000    `# ZPCR1` \
+  10.0000   `# bias_nm - 10 nm bias` \
+  1         `# File_format - GDS only` \
   0         `# Opposite_Tone - normal tone` \
   0         `# randomizeZoneStart - start at 0` \
   0         `# FSIdx - NO BUTTRESSES (continuous zones = merged polygons)` \
-  0         `# buttressGapWidth` \
-  0         `# buttressPeriod` \
-  0         `# block_size` \
+  0.6000    `# buttressGapWidth` \
+  6.0000    `# buttressPeriod` \
+  800000    `# block_size` \
   1         `# NoP - number of parts` \
   1         `# IoP - index of part` \
   0         `# blockGrid_pm` \
-  0         `# layerNumber` \
+  1         `# layerNumber` \
   0         `# nwaUnitSelection` \
   test-merged-polygon
 

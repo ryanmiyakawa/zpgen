@@ -1,7 +1,7 @@
 # Merged Polygon Refactoring Summary
 
 ## Overview
-Refactored zone plate generation to merge individual trapezoid segments into single polygons for continuous zones, reducing vertex count and file size by ~50%.
+Refactored zone plate generation to merge individual trapezoid segments into single polygons for continuous zones, reducing vertex count and file size by ~50%. Supports partial arcs when geometry gaps are present.
 
 ## Problem Statement
 Previously, each zone was composed of individual 4-vertex quadrilaterals (trapezoids), with 50% vertex redundancy:
@@ -11,8 +11,9 @@ Previously, each zone was composed of individual 4-vertex quadrilaterals (trapez
 
 ## Solution
 Merge contiguous zone segments into single polygons by accumulating unique vertices:
-- First segment: add all 4 vertices
+- First segment: add both minus-side and plus-side vertices
 - Subsequent segments: add only 2 new vertices (plus-side of trapezoid)
+- Export arcs when: geometry gaps occur, max vertices reached (200), or zone completes
 - Result: ~50% reduction in vertex count and polygon count
 
 ## Implementation Details
@@ -26,42 +27,56 @@ Merge contiguous zone segments into single polygons by accumulating unique verti
 - Create proper GDS XY record header with correct byte count
 
 **2. zpGenHolo.cpp**
-- Added `#include <vector>` for dynamic vertex buffers
-- Added vertex accumulation buffers:
-  - `innerEdgeVertices` - accumulates inner radius vertices (CCW order)
-  - `outerEdgeVertices` - accumulates outer radius vertices (reversed to CW)
+- Added vertex accumulation buffers (stack-allocated arrays):
+  - `innerEdgeVertices[MAX_ZONE_COORDS]` - accumulates inner radius vertices (CCW order)
+  - `outerEdgeVertices[MAX_ZONE_COORDS]` - accumulates outer radius vertices (for reversal)
+- Added `exportAccumulatedArc()` helper function to export partial arcs
 - Added `useMergedPolygon` flag to determine mode per zone
+- Added `accumulatedSegmentCount` to track segments in current arc
+- Added vertex count tracking with k/M/B formatting
 
 ### Merge Logic Flow
 
-**Zone Initialization** (line 509-518):
+**Zone Initialization**:
 ```cpp
 useMergedPolygon = (buttressWidth == 0) && !isGapZone;
 ```
 - TRUE for: FSIdx==0 (no buttresses), FSIdx==2 odd zones (full zones)
 - FALSE for: FSIdx==1 (gapped zones), FSIdx==2 even zones (gap zones)
 
-**Vertex Accumulation** (line 664-689):
-- **First segment**: Add starting vertices for both inner and outer edges
-- **All segments**: Add plus-side vertices (angles θ + α/2)
-- **Non-merged mode**: Export individual 4-vertex quad immediately
+**Vertex Accumulation**:
+- **First segment**: Add minus-side and plus-side vertices for both inner and outer edges
+  - `trapCoords[0,1]` → inner minus (theta - alpha/2)
+  - `trapCoords[2,3]` → inner plus (theta + alpha/2)
+  - `trapCoords[6,7]` → outer minus (theta - alpha/2)
+  - `trapCoords[4,5]` → outer plus (theta + alpha/2)
+- **Subsequent segments**: Add only plus-side vertices (angles θ + α/2)
+  - `trapCoords[2,3]` → inner plus
+  - `trapCoords[4,5]` → outer plus
+- **After each segment**: Check if vertex count ≥ 200, export arc if needed
 
-**Zone Completion** (line 739-774):
-1. Concatenate inner edge vertices (CCW order)
-2. Append outer edge vertices in reverse (CW order)
-3. Close polygon by repeating first vertex
-4. Export single merged polygon
+**Arc Export Conditions** (3 places):
+1. **Geometry gap** (~line 700): When `!bIsInGeometry()` → export accumulated arc and reset
+2. **Max vertices** (~line 834): When total vertices ≥ 200 → export arc and reset
+3. **Zone completion** (~line 903): When angle loop finishes → export final arc
+
+All three use unified `exportAccumulatedArc()` function - no code duplication.
 
 ### Vertex Ordering
 
-The merged polygon is constructed as a closed ring:
+For full rings (complete zones):
 ```
-Start at inner edge, angle 0
-→ March CCW around inner edge (add θ + α/2 vertices)
-→ Jump to outer edge at angle 2π
-→ March CW around outer edge (reversed vertices)
-→ Return to start point (closing vertex)
+inner[0] (minus@0) → inner[1] (plus@0) → inner[2...N] (plus@1...N)
+→ outer[N...0] (reversed) → close to inner[0]
 ```
+
+For partial arcs (geometry gaps):
+```
+inner[0] (minus@αstart) → inner[1...N] (plus@αstart...αend)
+→ outer[N...0] (reversed) → close to inner[0]
+```
+
+**Key insight**: inner[i] and outer[i] are at the same angle θ, ensuring proper arc topology.
 
 ## Buttress Mode Behavior
 

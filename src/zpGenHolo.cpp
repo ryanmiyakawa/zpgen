@@ -73,6 +73,92 @@ double secantSolve(double dRGuess, double th, double N, double * p, double q0, d
     return R1;
 }
 
+// Format vertex count with k/M/B units (1 decimal place)
+void formatVertexCount(long count, char* buffer) {
+    if (count >= 1000000000) {
+        sprintf(buffer, "%.1fB", count / 1e9);
+    } else if (count >= 1000000) {
+        sprintf(buffer, "%.1fM", count / 1e6);
+    } else if (count >= 1000) {
+        sprintf(buffer, "%.1fk", count / 1e3);
+    } else {
+        sprintf(buffer, "%ld", count);
+    }
+}
+
+// Export accumulated merged polygon as an arc (not a closed ring)
+// Returns number of polygons exported
+int exportAccumulatedArc(double* innerEdgeVertices, int innerVertexCount,
+                         double* outerEdgeVertices, int outerVertexCount,
+                         long segmentCount, unsigned char* polyPre, unsigned char* polyPost,
+                         unsigned char* polyForm, FILE* outputFile, int File_format,
+                         int mergedClockSpeed, int blockGrid_pixels) {
+    if (innerVertexCount == 0) return 0;
+
+    // Calculate total vertices (no ring closure needed for arcs)
+    int innerVertices = innerVertexCount / 2;
+    int outerVertices = outerVertexCount / 2;
+    int totalVertices = innerVertices + outerVertices + 1;  // +1 for polygon closure
+
+    const int MAX_GDS_VERTICES = 200;
+    int numPolygons = 0;
+
+    if (totalVertices <= MAX_GDS_VERTICES) {
+        // Simple case: export as single arc polygon
+        double arcPolygon[16000 * 2];  // Match MAX_ZONE_COORDS
+        int arcIdx = 0;
+
+        // Arc polygon: trace inner edge forward, then outer edge backward
+        // Path: inner[0,1,2...N] → outer[N,N-1,...,1,0] → close
+
+        // Add ALL inner vertices
+        for (int i = 0; i < innerVertexCount; i += 2) {
+            arcPolygon[arcIdx++] = innerEdgeVertices[i];
+            arcPolygon[arcIdx++] = innerEdgeVertices[i + 1];
+        }
+
+        // Add ALL outer vertices in REVERSE
+        for (int i = outerVertexCount - 2; i >= 0; i -= 2) {
+            arcPolygon[arcIdx++] = outerEdgeVertices[i];
+            arcPolygon[arcIdx++] = outerEdgeVertices[i + 1];
+        }
+
+        // Close polygon
+        arcPolygon[arcIdx++] = innerEdgeVertices[0];
+        arcPolygon[arcIdx++] = innerEdgeVertices[1];
+
+        exportPolygon(arcPolygon, polyPre, polyPost, polyForm, outputFile, File_format,
+                     mergedClockSpeed, blockGrid_pixels, totalVertices);
+        numPolygons = 1;
+    } else {
+        // Complex case: arc is too large, split into multiple polygons
+        // Note: For arcs (not full rings), we can't split well, so just export as single polygon
+        // even if it exceeds 200 vertices (GDS allows up to 8191 vertices per polygon)
+        double arcPolygon[16000 * 2];
+        int arcIdx = 0;
+
+        // Add all inner edge vertices (CCW)
+        for (int i = 0; i < innerVertexCount; i++) {
+            arcPolygon[arcIdx++] = innerEdgeVertices[i];
+        }
+
+        // Add outer edge vertices in reverse order (CW) all the way to vertex 0
+        for (int i = outerVertexCount - 2; i >= 0; i -= 2) {
+            arcPolygon[arcIdx++] = outerEdgeVertices[i];     // x
+            arcPolygon[arcIdx++] = outerEdgeVertices[i + 1]; // y
+        }
+
+        // Close polygon back to start
+        arcPolygon[arcIdx++] = innerEdgeVertices[0];
+        arcPolygon[arcIdx++] = innerEdgeVertices[1];
+
+        exportPolygon(arcPolygon, polyPre, polyPost, polyForm, outputFile, File_format,
+                     mergedClockSpeed, blockGrid_pixels, totalVertices);
+        numPolygons = 1;
+    }
+
+    return numPolygons;
+}
 
 
 
@@ -133,7 +219,7 @@ void makeZP(
     if (p[2] < 0)
     {
         virtualObject = 1;
-        p[0] = abs(p[0]);
+        p[2] = abs(p[2]);
         printf("Detected Virtual Object");
     }
     
@@ -294,6 +380,9 @@ void makeZP(
     double * PC = new double[2];
 
     long totalPoly = 0;
+    long totalVertexCount = 0;
+    double p_norm = norm2(p);
+
     unsigned char gdsPost[8];
     unsigned char polyPre[16];
     unsigned char polyPost[4];
@@ -318,15 +407,19 @@ void makeZP(
     int numPoints = 200;
     for (int i = 0; i < numPoints; i++){
         th = i * 2 * M_PI / numPoints;
-        fq[0] = 1 / T_min * cos(th) + k_0[0] / lambda;// is this right?
-        fq[1] = 1 / T_min * sin(th) + k_0[1] / lambda;
+        fq[0] = 1 / T_min * cos(th) + (k_0[0] ) / lambda;// is this right?
+        fq[1] = 1 / T_min * sin(th) + (k_0[1] ) / lambda;
 
         // find opd for each:
         freq2zpXYZ(fq, n_hat, p, lambda, r);
+
+        // Print r:
+        // printf("r: %0.3f, %0.3f, %0.3f\n", r[0], r[1], r[2]);
+
         opd = (double)((long double)xyz2OPL(r, p, q, lambda) - (long double)xyz2OPL(p, p, q, lambda));
 
-        // printf("th: %0.2f, opd: %0.3f\n", th, opd);
-        
+
+        // printf("f-components: f_p: %0.3f, f_NA: %0.3f, |fT|: %0.3f\n", 1 / T_min * cos(th), - p[0]/p_norm/lambda, fq[0]);
         tempN_min = (int) 2 * opd;
         tempN_max = (int) 2*opd + 1;
 
@@ -336,11 +429,16 @@ void makeZP(
         if (tempN_max > N_max){
             N_max = tempN_max;
         }
-       
+
+        // printf("fx: %0.3f, fy: %0.3f, th: %0.2f, opd: %0.3f, N_min: %d, N_max: %d\n", fq[0], fq[1], th*180/M_PI, opd, tempN_min, tempN_max);
+        // printf("k[0]: %0.2f, k[1]: %0.2f, p[0]: %0.2f, p[1]: %0.2f,p_norm: %0.3f, opd: %0.3f, N_max: %d\n\n", k_0[0], k_0[1], p[0]/p_norm, p[1]/p_norm, p_norm, opd, tempN_max);
+
     }
 
     int totalZones = (N_max - N_min) / 2 + 1;
     printf("N_max: %d, N_min: %d (total zones: %d)\n", N_max, N_min, totalZones);
+
+    
 
     if (File_format == 3 || File_format == 4)
     {                                  // WRV: shift by one half block size
@@ -446,6 +544,8 @@ void makeZP(
         bool useMergedPolygon = false;
         bool isFirstSegment = false;
         long mergedClockSpeed = 0;
+        long accumulatedSegmentCount = 0;  // Track segments in current accumulated arc
+        int mergedPolygonCount = 0;  // Track number of merged polygons exported for this zone
         innerVertexCount = 0;
         outerVertexCount = 0;
 
@@ -546,9 +646,11 @@ void makeZP(
 
 
         // Loop through angles
+        // Extend slightly past 2π to avoid gaps at wrap-around (especially for spiral phase)
+        const double ANGLE_EPSILON = 1e-6;  // Small extension past 2π
         while (true){
 
-            if (currentAngle >= startAngle + 2 * M_PI)
+            if (currentAngle >= startAngle + 2 * M_PI + ANGLE_EPSILON)
                 break;
         /**
          * @brief 
@@ -574,10 +676,27 @@ void makeZP(
             phase = getPhaseTerm(cx, cy, orders, nZerns, ZPCPhase, ZPCR1, ZPCR2);
             phase += customPhase(cx, cy, customMaskIdx) / (2 * M_PI);
 
-            // Accept or reject trap based on pupil boundaries, obscuration, and custom mask     
-            if (!bIsInGeometry(cx, cy, obscurationSigma) || 
+            // Accept or reject trap based on pupil boundaries, obscuration, and custom mask
+            if (!bIsInGeometry(cx, cy, obscurationSigma) ||
             (customMaskIdx != 0 && !bIsInCustomMask(cx, cy, customMaskIdx)))
             {
+                // If we're in merged polygon mode and have accumulated vertices, export them now
+                if (useMergedPolygon && innerVertexCount > 0) {
+                    int numArcPolys = exportAccumulatedArc(innerEdgeVertices, innerVertexCount,
+                                                           outerEdgeVertices, outerVertexCount,
+                                                           accumulatedSegmentCount, polyPre, polyPost,
+                                                           polyForm, outputFile, File_format,
+                                                           mergedClockSpeed, blockGrid_pixels);
+                    totalPoly += numArcPolys;
+                    mergedPolygonCount += numArcPolys;
+
+                    // Reset buffers for next arc segment
+                    innerVertexCount = 0;
+                    outerVertexCount = 0;
+                    accumulatedSegmentCount = 0;
+                    isFirstSegment = true;  // Next valid segment will be a new arc start
+                }
+
                 currentAngle = currentAngle + alpha;
                 continue;
             }
@@ -692,6 +811,27 @@ void makeZP(
                     outerEdgeVertices[outerVertexCount++] = trapCoords[4]; // outer plus x
                     outerEdgeVertices[outerVertexCount++] = trapCoords[5]; // outer plus y
 
+                    accumulatedSegmentCount++;  // Track number of segments in this arc
+
+                    // Check if we've hit the vertex limit - export arc if needed
+                    int totalVertices = (innerVertexCount / 2) + (outerVertexCount / 2) + 1;
+                    const int MAX_GDS_VERTICES = 200;
+                    if (totalVertices >= MAX_GDS_VERTICES) {
+                        int numArcPolys = exportAccumulatedArc(innerEdgeVertices, innerVertexCount,
+                                                               outerEdgeVertices, outerVertexCount,
+                                                               accumulatedSegmentCount, polyPre, polyPost,
+                                                               polyForm, outputFile, File_format,
+                                                               mergedClockSpeed, blockGrid_pixels);
+                        totalPoly += numArcPolys;
+                        mergedPolygonCount += numArcPolys;
+
+                        // Reset buffers for next arc segment
+                        innerVertexCount = 0;
+                        outerVertexCount = 0;
+                        accumulatedSegmentCount = 0;
+                        isFirstSegment = true;
+                    }
+
                 } else {
                     // Non-merged mode: export individual quad (backward compatibility)
                     exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed, blockGrid_pixels, 5);
@@ -745,99 +885,22 @@ void makeZP(
 
         } // End angle loop
 
-        // If we were accumulating vertices for a merged polygon, export it now
+        // If we were accumulating vertices for a merged polygon, export the final arc
         if (useMergedPolygon && innerVertexCount > 0) {
-            // Close the ring by adding the first segment's minus-side vertices to the end
-            // This connects the last segment back to the first segment
-            innerEdgeVertices[innerVertexCount++] = innerEdgeVertices[0];  // inner_0 minus x
-            innerEdgeVertices[innerVertexCount++] = innerEdgeVertices[1];  // inner_0 minus y
-            outerEdgeVertices[outerVertexCount++] = outerEdgeVertices[0];  // outer_0 minus x
-            outerEdgeVertices[outerVertexCount++] = outerEdgeVertices[1];  // outer_0 minus y
-
-            // Calculate total vertices to determine if we need to split
-            int innerVertices = innerVertexCount / 2;
-            int outerVertices = outerVertexCount / 2;
-            int totalVertices = innerVertices + outerVertices + 1;  // +1 for closing vertex
-
-            // GDS format supports max 200 vertices per polygon
-            const int MAX_GDS_VERTICES = 200;
-            int numPolygons = 0;
-
-            if (totalVertices <= MAX_GDS_VERTICES) {
-                // Simple case: export as single polygon
-                // Construct complete polygon: inner edge (CCW) + outer edge reversed (CW) + closure
-                double mergedPolygon[MAX_ZONE_COORDS * 2];  // Temp buffer on stack
-                int mergedIdx = 0;
-
-                // Add all inner edge vertices (already in CCW order)
-                for (int i = 0; i < innerVertexCount; i++) {
-                    mergedPolygon[mergedIdx++] = innerEdgeVertices[i];
-                }
-
-                // Add outer edge vertices in reverse order (makes them go CW)
-                for (int i = outerVertexCount - 2; i >= 0; i -= 2) {
-                    mergedPolygon[mergedIdx++] = outerEdgeVertices[i];     // x
-                    mergedPolygon[mergedIdx++] = outerEdgeVertices[i + 1]; // y
-                }
-
-                // Close polygon by repeating first vertex
-                mergedPolygon[mergedIdx++] = innerEdgeVertices[0];
-                mergedPolygon[mergedIdx++] = innerEdgeVertices[1];
-
-                exportPolygon(mergedPolygon, polyPre, polyPost, polyForm, outputFile, File_format, mergedClockSpeed, blockGrid_pixels, totalVertices);
-                numPolygons = 1;
-            } else {
-                // Complex case: need to split into multiple arc segments
-                // Each segment will be a quad strip covering part of the ring
-
-                // Calculate how many segments we can fit per polygon (leaving room for closure)
-                int segmentsPerPoly = (MAX_GDS_VERTICES - 2) / 2;  // Each segment adds 2 vertices (plus side)
-                int totalSegments = trapCount;
-                numPolygons = (totalSegments + segmentsPerPoly - 1) / segmentsPerPoly;  // Ceiling division
-
-                // Stack-allocated arc polygon buffer
-                double arcPolygon[MAX_GDS_VERTICES * 2];
-
-                // Export each arc segment as a separate polygon
-                for (int polyIdx = 0; polyIdx < numPolygons; polyIdx++) {
-                    int startSeg = polyIdx * segmentsPerPoly;
-                    int endSeg = std::min(startSeg + segmentsPerPoly, (int)totalSegments);
-
-                    int arcIdx = 0;
-
-                    // Add inner edge vertices for this arc (CCW)
-                    for (int seg = startSeg; seg < endSeg; seg++) {
-                        int innerIdx = seg * 2;  // Each segment has 2 inner vertices (minus and plus)
-                        arcPolygon[arcIdx++] = innerEdgeVertices[innerIdx];      // minus x
-                        arcPolygon[arcIdx++] = innerEdgeVertices[innerIdx + 1];  // minus y
-                    }
-                    // Add final plus-side vertex
-                    int finalInnerIdx = (endSeg - 1) * 2 + 2;
-                    arcPolygon[arcIdx++] = innerEdgeVertices[finalInnerIdx];
-                    arcPolygon[arcIdx++] = innerEdgeVertices[finalInnerIdx + 1];
-
-                    // Add outer edge vertices for this arc (reversed = CW)
-                    for (int seg = endSeg - 1; seg >= startSeg; seg--) {
-                        int outerIdx = seg * 2 + 2;  // Plus-side vertex
-                        arcPolygon[arcIdx++] = outerEdgeVertices[outerIdx];
-                        arcPolygon[arcIdx++] = outerEdgeVertices[outerIdx + 1];
-                    }
-                    // Add final minus-side vertex
-                    int finalOuterIdx = startSeg * 2;
-                    arcPolygon[arcIdx++] = outerEdgeVertices[finalOuterIdx];
-                    arcPolygon[arcIdx++] = outerEdgeVertices[finalOuterIdx + 1];
-
-                    // Close the arc polygon
-                    arcPolygon[arcIdx++] = arcPolygon[0];
-                    arcPolygon[arcIdx++] = arcPolygon[1];
-
-                    int arcVertices = arcIdx / 2;
-                    exportPolygon(arcPolygon, polyPre, polyPost, polyForm, outputFile, File_format, mergedClockSpeed, blockGrid_pixels, arcVertices);
-                }
-            }
-
+            int numPolygons = exportAccumulatedArc(innerEdgeVertices, innerVertexCount,
+                                                   outerEdgeVertices, outerVertexCount,
+                                                   accumulatedSegmentCount, polyPre, polyPost,
+                                                   polyForm, outputFile, File_format,
+                                                   mergedClockSpeed, blockGrid_pixels);
             totalPoly += numPolygons;
+            mergedPolygonCount += numPolygons;
 
+            int totalVertices = (innerVertexCount / 2) + (outerVertexCount / 2) + 1;
+            totalVertexCount += totalVertices;
+        }
+
+        // Print progress for merged polygon zones
+        if (useMergedPolygon) {
             // Smart progress printing: throttle output for large zone plates
             int printInterval = 1;
             if (totalZones > 500) printInterval = 100;
@@ -846,15 +909,18 @@ void makeZP(
             bool shouldPrint = ((n - N_min) % (printInterval * 2) == 0) || (n == N_max);
 
             if (shouldPrint) {
-                if (numPolygons == 1) {
-                    printf("Finished zone %d with 1 merged polygon (%d vertices, %ld segments)\n", n, totalVertices, trapCount);
+                char vertexCountStr[32];
+                formatVertexCount(totalVertexCount, vertexCountStr);
+                if (mergedPolygonCount == 1) {
+                    printf("Finished zone %d with 1 merged polygon (%ld segments) [total: %s vertices]\n", n, trapCount, vertexCountStr);
                 } else {
-                    printf("Finished zone %d with %d arc polygons (%d total vertices, %ld segments)\n", n, numPolygons, totalVertices, trapCount);
+                    printf("Finished zone %d with %d merged polygons (%ld segments) [total: %s vertices]\n", n, mergedPolygonCount, trapCount, vertexCountStr);
                 }
                 fflush(outputFile);  // Flush file buffer periodically
             }
         } else {
             totalPoly += trapCount;
+            totalVertexCount += trapCount * 4;  // Each trap has 4 vertices
 
             // Smart progress printing: throttle output for large zone plates
             int printInterval = 1;
@@ -864,10 +930,12 @@ void makeZP(
             bool shouldPrint = ((n - N_min) % (printInterval * 2) == 0) || (n == N_max);
 
             if (shouldPrint) {
+                char vertexCountStr[32];
+                formatVertexCount(totalVertexCount, vertexCountStr);
                 if (File_format == 0)
-                    printf("Finished zone %d with %ld arcs\n", n, trapCount);
+                    printf("Finished zone %d with %ld arcs [total: %s vertices]\n", n, trapCount, vertexCountStr);
                 else
-                    printf("Finished zone %d with %ld traps.  \tR_%d = %0.5f \n", n, trapCount, n, Rn);
+                    printf("Finished zone %d with %ld traps.  \tR_%d = %0.5f [total: %s vertices]\n", n, trapCount, n, Rn, vertexCountStr);
                 fflush(outputFile);  // Flush file buffer periodically
             }
         }

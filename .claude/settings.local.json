@@ -17,7 +17,9 @@
       "Bash(test-scripts/test-max-vertices.sh:*)",
       "Bash(./test-scripts/test-large-zp.sh:*)",
       "Bash(chmod:*)",
-      "Bash(pgrep:*)"
+      "Bash(pgrep:*)",
+      "Bash(./ZPGenHolo:*)",
+      "Bash(./test-scripts/test-offaxis-zp.sh:*)"
     ],
     "deny": [],
     "ask": []

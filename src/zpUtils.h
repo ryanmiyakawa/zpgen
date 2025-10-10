@@ -64,7 +64,11 @@ void normVector(double * v);
 void crossProduct( double a[3],  double b[3], double result[3]);
 
 // Main functions
-void freq2zpXYZ(double f[2], double n[3], double p[3], double lambda, double result[3]);
+bool freq2zpXYZ(const double f[2],
+                           const double n_in[3],
+                           const double p_on_plane[3],
+                           double lambda,
+                           double out[3]);
 void zpCoord2KVector(double r[3], double result[2]);
 void zpXYZ2UxUy(const double r[3], const double p[3],  double bx[3],  double by[3],  double bz[3], double result[3]);
 void zpUxUy2XYZ( double U[3],  double p0[3],  double bx[3],  double by[3], double result[3]);

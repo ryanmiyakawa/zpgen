@@ -508,32 +508,98 @@ void crossProduct( double a[3],  double b[3], double result[3]) {
     result[2] = a[0]*b[1] - a[1]*b[0];
 }
 
+
+static inline double dot3(const double a[3], const double b[3]) {
+    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+}
+
+static inline double norm3(const double v[3]) {
+    return sqrt(dot3(v, v));
+}
+
+
 // Coverts spatial frequency defiend by (fx,fy) to a point in xyz space
-void freq2zpXYZ(double f[2], double n[3], double p[3], double lambda, double result[3]) {
-    double fx = f[0];
-    double fy = f[1];
+bool freq2zpXYZ(const double f[2],
+                           const double n_in[3],
+                           const double p_on_plane[3],
+                           double lambda,
+                           double out[3]) {
 
-    // Make sure u and n are unit vectors:
-    double p0 = norm2(p);
-    double u[3] = {p[0]/p0, p[1]/p0, p[2]/p0};
-    normVector(n);
+    const double fx = f[0];
+    const double fy = f[1];
 
-    // build l-hat vector:
-    double l_norm = 1/lambda * sqrt(1-((fx * lambda)*(fx * lambda) + (fy * lambda)*(fy * lambda)));
-    double l[3] = {fx, fy, l_norm};
-    normVector(l);
+    // 1) Build unit direction l from spatial frequencies
+    const double s2 = (lambda*fx)*(lambda*fx) + (lambda*fy)*(lambda*fy);
+    if (s2 > 1.0) {
+        // Evanescent: no real propagation direction
+        return false;
+    }
+    double lz = sqrt(fmax(0.0, 1.0 - s2));
+    double l[3] = { lambda*fx, lambda*fy, lz }; // already unit length
 
-    // flip lz if necessary due to ambiguity of square root:
-    if (p[2] < 0){
+    // 2) Normalize plane normal (without mutating input)
+    double n[3] = { n_in[0], n_in[1], n_in[2] };
+    const double nmag = norm3(n);
+    if (nmag == 0.0) return false;
+    n[0] /= nmag; n[1] /= nmag; n[2] /= nmag;
+
+    // 3) Choose lz sign so intersection is in front of the origin (t >= 0) if possible
+    // Compute denom with current sign
+    double denom = dot3(l, n);
+    double numer = dot3(p_on_plane, n);
+
+    if (denom == 0.0) {
+        // Try flipping lz once; if still zero, it's parallel
         l[2] = -l[2];
+        denom = dot3(l, n);
+        if (denom == 0.0) return false;
     }
 
-    // solve p0 = l_0 + d*l for d:
-    double d = p0 * scalarDotProduct(u, n) / scalarDotProduct(l, n);
+    double t = numer / denom;
 
-    result[0] = d*l[0];
-    result[1] = d*l[1];
-    result[2] = d*l[2];
+    // If you require forward intersection only (t >= 0), try flipping lz once to see if that helps
+    if (t < 0.0) {
+        l[2] = -l[2];
+        denom = dot3(l, n);
+        if (denom == 0.0) return false;
+        t = numer / denom;
+        if (t < 0.0) {
+            // Plane is behind the chosen propagation direction
+            return false;
+        }
+    }
+
+    // 4) Intersection point
+    out[0] = t * l[0];
+    out[1] = t * l[1];
+    out[2] = t * l[2];
+    return true;
+
+
+    // double fx = f[0];
+    // double fy = f[1];
+
+    // // Make sure u and n are unit vectors:
+    // double p0 = norm2(p);
+    // double u[3] = {p[0]/p0, p[1]/p0, p[2]/p0};
+    // normVector(n);
+
+    // // build l-hat vector:
+    // double l_norm = 1/lambda * sqrt(1-((fx * lambda)*(fx * lambda) + (fy * lambda)*(fy * lambda)));
+    // double l[3] = {fx, fy, l_norm};
+    // normVector(l);
+
+    // // flip lz if necessary due to ambiguity of square root:
+    // if (p[2] < 0){
+    //     l[2] = -l[2];
+    // }
+
+    // // solve p0 = l_0 + d*l for d:
+    // double d = p0 * scalarDotProduct(u, n) / scalarDotProduct(l, n);
+
+    // result[0] = d*l[0];
+    // result[1] = d*l[1];
+    // result[2] = d*l[2];
 }
 
 void zpCoord2KVector(double r[3], double k[2]) {
@@ -577,19 +643,50 @@ void zpUxUy2XYZ( double U[3],  double p0[3],  double bx[3],  double by[3], doubl
  * @return double 
  */
 double xyz2OPL( double r_o[3], double p[3], double q0, double lambda){
-    
+
     double p_norm = norm2(p);
+    double p_hat[3] = { p[0]/p_norm, p[1]/p_norm, p[2]/p_norm };
 
-    // vector from image to point xyz on zp.
-    double * r_i = new double[3];
+    // distance from object (origin) to point r_o
+    double L1 = norm2(r_o);
 
-    // vector relationship between r_o and r_i: r_i = p + q - r_o
-    // q and p point in the same direction: q = q0 * p/|p|
-    for (int i = 0; i < 3; i++)
-        r_i[i] = p[i] + q0 * p[i] / p_norm - r_o[i];
+    // projection of r_o onto the optical axis
+    double proj = r_o[0]*p_hat[0] + r_o[1]*p_hat[1] + r_o[2]*p_hat[2];
+
+    // how much farther along p we need to go to reach the image plane
+    double delta = q0 - proj;
+
+    // compute image point r_i = r_o + delta * p_hat
+    double r_i[3] = {
+        r_o[0] + delta * p_hat[0],
+        r_o[1] + delta * p_hat[1],
+        r_o[2] + delta * p_hat[2]
+    };
+
+    // distance from r_o to r_i
+    double L2_vec[3] = {
+        r_i[0] - r_o[0],
+        r_i[1] - r_o[1],
+        r_i[2] - r_o[2]
+    };
+    double L2 = norm2(L2_vec);
+
+    // return total optical path length in waves
+    return (L1 + L2) / lambda;
+    
+    
+    // double p_norm = norm2(p);
+
+    // // vector from image to point xyz on zp.
+    // double * r_i = new double[3];
+
+    // // vector relationship between r_o and r_i: r_i = p + q - r_o
+    // // q and p point in the same direction: q = q0 * p/|p|
+    // for (int i = 0; i < 3; i++)
+    //     r_i[i] = p[i] + q0 * p[i] / p_norm - r_o[i];
     
 
-    return (norm2(r_o) + norm2(r_i)) / lambda;
+    // return (norm2(r_o) + norm2(r_i)) / lambda;
 }
 
 // Composite function useful for directly grabbing pupil coordinates

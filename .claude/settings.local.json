@@ -1,7 +1,29 @@
 {
   "permissions": {
     "allow": [
+<<<<<<< HEAD
       "Bash(chmod:*)"
+=======
+      "Bash(clang++:*)",
+      "Bash(./test-small-zp.sh:*)",
+      "Bash(./test-aperture-mask.sh:*)",
+      "Bash(./test-scripts/test-aperture-mask.sh:*)",
+      "Bash(./test-buttressing.sh:*)",
+      "Bash(./test-mixed-zones.sh:*)",
+      "Bash(bash:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(../dist/ZPGenHolo:*)",
+      "Read(//Users/rhmiyakawa/Documents/Xcode/zpgen/ZPGen/ZPGen/**)",
+      "Bash(./test-scripts/deprecated/test-small-zp.sh:*)",
+      "Bash(./test-scripts/test-max-vertices.sh:*)",
+      "Bash(test-scripts/test-max-vertices.sh:*)",
+      "Bash(./test-scripts/test-large-zp.sh:*)",
+      "Bash(chmod:*)",
+      "Bash(pgrep:*)",
+      "Bash(./ZPGenHolo:*)",
+      "Bash(./test-scripts/test-offaxis-zp.sh:*)"
+>>>>>>> large-polygon
     ],
     "deny": [],
     "ask": []

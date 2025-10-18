@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZPGen WASM - Zone Plate Generator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #555;
+        }
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #0051D5;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .progress {
+            display: none;
+            margin-top: 20px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007AFF, #00C7FF);
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 500;
+            font-size: 12px;
+        }
+        .progress-text {
+            margin-top: 10px;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+        .info {
+            background: #f0f7ff;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #555;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 Zone Plate Generator</h1>
+
+        <div class="info">
+            Generate diffractive zone plates for nanofabrication. This tool runs entirely in your browser using WebAssembly.
+        </div>
+
+        <div class="form-group">
+            <label for="na">Numerical Aperture (NA)</label>
+            <input type="number" id="na" value="0.02" step="0.01" min="0.001" max="0.95">
+        </div>
+
+        <div class="form-group">
+            <label for="lambda">Wavelength (nm)</label>
+            <input type="number" id="lambda" value="13.5" step="0.1" min="1">
+        </div>
+
+        <div class="form-group">
+            <label for="focal">Focal Length (μm)</label>
+            <input type="number" id="focal" value="100" step="10" min="10">
+        </div>
+
+        <div class="form-group">
+            <label for="bias">Zone Width Bias (nm)</label>
+            <input type="number" id="bias" value="10" step="1" min="0">
+        </div>
+
+        <button id="generate" onclick="generateZonePlate()">
+            Generate Zone Plate
+        </button>
+
+        <div class="progress" id="progress">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">
+                Initializing...
+            </div>
+        </div>
+
+        <div class="error" id="error"></div>
+    </div>
+
+    <script type="module">
+        import init, { WasmZPGenerator } from './pkg/zpgen_wasm.js';
+
+        let initialized = false;
+
+        // Initialize WASM module
+        async function initWasm() {
+            if (!initialized) {
+                await init();
+                initialized = true;
+                console.log('WASM module initialized');
+            }
+        }
+
+        // Make function globally available
+        window.generateZonePlate = async function() {
+            const generateBtn = document.getElementById('generate');
+            const progressDiv = document.getElementById('progress');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            const errorDiv = document.getElementById('error');
+
+            try {
+                // Hide error, show progress
+                errorDiv.style.display = 'none';
+                progressDiv.style.display = 'block';
+                generateBtn.disabled = true;
+
+                // Initialize WASM
+                await initWasm();
+
+                // Get parameters
+                const na = parseFloat(document.getElementById('na').value);
+                const lambda = parseFloat(document.getElementById('lambda').value);
+                const focal = parseFloat(document.getElementById('focal').value);
+                const bias = parseFloat(document.getElementById('bias').value);
+
+                // Collect GDS chunks
+                const chunks = [];
+
+                // Create generator with chunk callback
+                const gen = new WasmZPGenerator((chunk) => {
+                    chunks.push(new Uint8Array(chunk));
+                });
+
+                // Set progress callback
+                gen.setProgressCallback((update) => {
+                    const percent = Math.round(update.progress * 100);
+                    progressFill.style.width = percent + '%';
+                    progressFill.textContent = percent + '%';
+                    progressText.textContent =
+                        `Zone ${update.zone} / ${update.totalZones} (${percent}%)`;
+                });
+
+                // Build parameters object
+                const params = {
+                    zTol: 0.01,
+                    lambda_nm: lambda,
+                    p: [0, 0, focal],
+                    q: 100000,
+                    k_0: [0, 0, 1],
+                    bx: [1, 0, 0],
+                    by: [0, 1, 0],
+                    obscurationSigma: 0,
+                    na: na,
+                    nZerns: 0,
+                    zernikeOrders: [],
+                    customMaskIdx: 0,
+                    anamorphicFac: 1,
+                    anamorphicAzimuth: 0,
+                    zpcPhase: 0,
+                    apd: 0,
+                    apdWindow: 0,
+                    zpcr2: 0,
+                    zpcr1: 0,
+                    biasNm: bias,
+                    oppositeTone: false,
+                    randomizeZoneStart: false,
+                    fsIdx: 0,
+                    buttressGapWidth: 0,
+                    buttressPeriod: 0,
+                    dutyCycle: 0.5,
+                    layerNumber: 0,
+                };
+
+                // Generate zone plate
+                progressText.textContent = 'Generating zone plate...';
+                gen.generate(params);
+
+                // Merge chunks and download
+                const blob = new Blob(chunks, { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `zoneplate_na${na}_f${focal}um_${lambda}nm.gds`;
+                a.click();
+                URL.revokeObjectURL(url);
+
+                progressText.textContent = 'Complete! File downloaded.';
+                setTimeout(() => {
+                    progressDiv.style.display = 'none';
+                }, 2000);
+
+            } catch (err) {
+                console.error('Generation failed:', err);
+                errorDiv.textContent = 'Error: ' + err;
+                errorDiv.style.display = 'block';
+                progressDiv.style.display = 'none';
+            } finally {
+                generateBtn.disabled = false;
+            }
+        };
+
+        // Initialize on load
+        initWasm().catch(err => {
+            console.error('WASM initialization failed:', err);
+            document.getElementById('error').textContent =
+                'Failed to load WASM module: ' + err;
+            document.getElementById('error').style.display = 'block';
+        });
+    </script>
+</body>
+</html>

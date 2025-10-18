@@ -1,0 +1,47 @@
+# Rust build artifacts
+/target/
+
+# Cargo.lock is typically:
+# - Committed for binaries/applications
+# - Ignored for libraries
+# Since this can be used both ways, keeping it committed is fine
+# Uncomment the next line if you want to ignore it:
+# Cargo.lock
+
+# WASM build output (can be regenerated with ./build-wasm.sh)
+/examples/browser/pkg/
+/pkg/
+
+# Rust debug files
+*.rlib
+*.pdb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+/tmp/
+
+# Test outputs
+/test-output/
+*.gds
+
+# Node modules (if using npm for examples)
+node_modules/
+package-lock.json
+
+# Backup files
+*.bak
+*.tmp
+
+# Server logs
+/examples/browser/.DS_Store
+nohup.out

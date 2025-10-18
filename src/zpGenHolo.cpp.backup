@@ -91,7 +91,8 @@ void formatVertexCount(long count, char* buffer) {
 int exportAccumulatedArc(double* innerEdgeVertices, int innerVertexCount,
                          double* outerEdgeVertices, int outerVertexCount,
                          long segmentCount, unsigned char* polyPre, unsigned char* polyPost,
-                         unsigned char* polyForm, FILE* outputFile, int File_format) {
+                         unsigned char* polyForm, FILE* outputFile, int File_format,
+                         int mergedClockSpeed, int blockGrid_pixels) {
     if (innerVertexCount == 0) return 0;
 
     // Calculate total vertices (no ring closure needed for arcs)
@@ -127,7 +128,7 @@ int exportAccumulatedArc(double* innerEdgeVertices, int innerVertexCount,
         arcPolygon[arcIdx++] = innerEdgeVertices[1];
 
         exportPolygon(arcPolygon, polyPre, polyPost, polyForm, outputFile, File_format,
-                     0, 0, totalVertices);
+                     mergedClockSpeed, blockGrid_pixels, totalVertices);
         numPolygons = 1;
     } else {
         // Complex case: arc is too large, split into multiple polygons
@@ -152,7 +153,7 @@ int exportAccumulatedArc(double* innerEdgeVertices, int innerVertexCount,
         arcPolygon[arcIdx++] = innerEdgeVertices[1];
 
         exportPolygon(arcPolygon, polyPre, polyPost, polyForm, outputFile, File_format,
-                     0, 0, totalVertices);
+                     mergedClockSpeed, blockGrid_pixels, totalVertices);
         numPolygons = 1;
     }
 
@@ -163,50 +164,49 @@ int exportAccumulatedArc(double* innerEdgeVertices, int innerVertexCount,
 
 
 void makeZP(
-    double zTol,
-    double lambda_nm,
-    double * p,
-    double q,
-    double * k_0,
-    double * bx,
-    double * by,
-    double obscurationSigma,
-    double NA,
-    int nZerns,
-    double *orders,
-    int customMaskIdx,
-    double anamorphicFac,
-    double anamorphicAzimuth,
-    double ZPCPhase,
-    double APD,
-    double APD_window,
-    double ZPCR2,
-    double ZPCR1,
-    double bias_nm,
-    int File_format,
-    int Opposite_Tone,
+    double zTol, 
+    double lambda_nm, 
+    double * p, 
+    double q,  
+    double * k_0, 
+    double * bx, 
+    double * by, 
+    double obscurationSigma, 
+    double NA, 
+    int nZerns, 
+    double *orders, 
+    int customMaskIdx, 
+    double anamorphicFac, 
+    double anamorphicAzimuth, 
+    double ZPCPhase, 
+    double APD, 
+    double APD_window, 
+    double ZPCR2, 
+    double ZPCR1, 
+    double bias_nm, 
+    int File_format, 
+    int Opposite_Tone, 
     int randomizeZoneStart,
-    int FSIdx,
-    double buttressGapWidth,
-    double buttressPeriod,
-    long block_size,
-    int NoP,
-    int IoP,
-    double dutyCycle,
-    int layerNumber,
+    int FSIdx, 
+    double buttressGapWidth, 
+    double buttressPeriod, 
+    long block_size, 
+    int NoP, 
+    int IoP, 
+    double blockGrid_pm, 
+    int layerNumber, 
     int nwaUnitSelection,
     char * fileName)
 {
 
     clock_t begin = clock();
+    long block_unit_size_pm = 500;
+    double blockGrid_um = blockGrid_pm/1000000;
     double lambda, bias_um;
     lambda = lambda_nm / 1000;
     bias_um = bias_nm/1000;
 
-    // Set default duty cycle if not specified
-    if (dutyCycle == 0) {
-        dutyCycle = 0.5;
-    }
+
 
     // Define plane normal
     double * n_hat = new double[3];
@@ -224,7 +224,60 @@ void makeZP(
     }
     
 
+    // For WRV or GTX  block unit is passed in as nwa unit
+    if (File_format == 3 || File_format == 4) {
+        block_unit_size_pm = nwaUnitSelection; 
+
+        printf("block_unit_size_pm = %ld", block_unit_size_pm);
+    }
     
+
+    
+    double nwaUnit = .004; // NWA unit for ARC file in [um/px]
+    
+    switch (nwaUnitSelection){
+        case 0:
+            nwaUnit = 1; // not used
+            break;
+        case 1:
+             nwaUnit = 0.00175;
+            break;
+        case 2:
+            nwaUnit = 0.002;
+            break;
+        case 3:
+            nwaUnit = 0.0025;
+            break;
+        case 4:
+            nwaUnit = 0.004;
+            break;
+        case 5:
+            nwaUnit = 0.005;
+            break;
+        case 6:
+            nwaUnit = 0.006;
+            break;
+        case 7:
+            nwaUnit = 0.007;
+            break;
+        case 8:
+            nwaUnit = 0.008;
+            break;
+    }
+
+
+    double blockGrid_pixels = 0;
+    int computeDoseByGriddedAreaFraction = 0;
+
+    // WRV compute blockGrid in units of pixels:
+    if (blockGrid_pm >= block_unit_size_pm && blockGrid_pm > 0){
+        blockGrid_pixels = blockGrid_pm /   ((double) block_unit_size_pm);
+        printf("Rounding WRV pixels by \t\t= %d pixels\n", (int)roundf(blockGrid_pixels));
+
+        computeDoseByGriddedAreaFraction = 1;
+    } else {
+        blockGrid_pixels = 0;
+    }
     
     
     printf("NA \t\t\t= %f \n", NA);
@@ -245,6 +298,10 @@ void makeZP(
     }
 
 
+    printf("WRV block grid \t\t = %g\n", blockGrid_pm);
+    printf("BlockGrid pixels \t = %d\n", (int)roundf(blockGrid_pixels));
+
+    
     printf("Max zone phase error\t= lambda/%d\n", (int)(1 / zTol));
     printf("ZPC phase shift \t= %f in radians\n", ZPCPhase);
     printf("Apodized term \t\t= %f %% transmission\n", APD * 100);
@@ -256,16 +313,51 @@ void makeZP(
     printf("Is Free Standing? \t= %d \n", FSIdx);
     printf("W\t\t\t= %f dr \n", buttressGapWidth);
     printf("T\t\t\t= %f dr \n", buttressPeriod);
-    printf("Duty cycle \t\t= %f\n", dutyCycle);
     printf("Block size for wrv file: %ld\n", block_size);
     printf("Generating partial %d of total %d total.\n", IoP, NoP);
     if (Opposite_Tone == 1)
     {
         printf("Tone swapped");
     }
+    int wrv_split;
 
     printf("\n");
-    printf("Building GDSII file\n");
+
+    if (File_format == 0)
+    {
+        printf("Building NWA for nanowriter\n");
+    }
+    else if (File_format == 1)
+    {
+        printf("GDS + text file \n");
+    }
+
+    else if (File_format == 2)
+    {
+        printf("Save as GDSII file \n");
+    }
+    else if (File_format == 3)
+    {
+        printf("Building WRV file \n");
+    }
+    else if (File_format == 4)
+    {
+        printf("Building GTX file\n");
+    }
+    else
+    {
+        printf("unknown file format %d\n", File_format);
+    }
+
+    if (NoP == 1 && IoP != 1)
+    {
+        printf("\nIndex of part has to be 1 if number of parts is 1 !\n");
+        system("PAUSE");
+    }
+    if (nwaUnitSelection > 0)
+    {
+        printf("NWA unit selection is %d with value %0.5f.\n", nwaUnitSelection, nwaUnit);
+    }
 
     printf("Output file: %s\n", fileName);
 
@@ -273,12 +365,15 @@ void makeZP(
     // BEGIN NEW ZP CODE:
 
     FILE *outputFile = NULL;
-    double dbscale = 10000; // db unit to microns
-    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha,
-                cx, cy, startAngle, currentAngle, arcStart, phase,
-                RCM = 0, tR1, tR2, f,
+    FILE *supportTextFile = NULL;
+    double dbscale = 0; // db unit to microns
+    int numBlocksOnSide = 1;
+    double rGuess, rGuessp1, Rn, Rnp1, dr, buttressWidth, alphaBT, alphaZT, alpha, 
+                x, y, cx, cy, R1, R2, dR1, startAngle, currentAngle, arcStart, phase, 
+                RCM = 0, tR1, tR2, f, pNA, RN, rNp, rNq, RNp1, dRN, 
                 Rnpa2, Rnma2, tR1pa, tR1ma, tR2pa, tR2ma, tR1nb, tR2nb, tR1panb, tR1manb, tR2panb, tR2manb,
-                offsetX = 0, offsetY = 0, drawAngle;
+                minRelDose, maxRelDose, doseBias, minAreaFraction, maxAreaFraction, minClockSpeed, maxClockSpeed,  zpTiltOffsetX, zpTiltOffsetY,
+                zpCenterX, zpCenterY, offsetX = 0, offsetY = 0, drawAngle, ux, uy;
 
     double * r = new double[3]; 
     double * u = new double[3];
@@ -343,15 +438,89 @@ void makeZP(
     int totalZones = (N_max - N_min) / 2 + 1;
     printf("N_max: %d, N_min: %d (total zones: %d)\n", N_max, N_min, totalZones);
 
-    // Compute focal length for initial radius guesses
-    f = 1/(1/norm2(p) * std::copysign(1.0, p[2]) + 1/q);
+    
 
-    // GDS file initialization
-    if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
-        printf("Cannot open file.\n");
-    setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
-    initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm, layerNumber);
+    if (File_format == 3 || File_format == 4)
+    {                                  // WRV: shift by one half block size
+        numBlocksOnSide = layerNumber; // For WRV files we send num blocks on the GDSLayer input
 
+        offsetX += numBlocksOnSide * block_size * block_unit_size_pm / 2 / 1000000;
+        offsetY += numBlocksOnSide * block_size * block_unit_size_pm / 2 / 1000000;
+    }
+
+    if (File_format == 4)
+    { // GTX: shift by one half block size
+        offsetX +=  block_size / 2 ;
+        offsetY +=  block_size / 2 ;
+    }
+
+    // Compute dRN and dR1 to bound dose information
+    f          = 1/(1/norm2(p) * std::copysign(1.0, p[2]) + 1/q);
+    RN          = secantSolve(sqrt(N_max*lambda*f), 0, N_max, p, q, bx, by, 0, lambda);
+    RNp1        = secantSolve(sqrt((N_max + 1)*lambda*f), 0, N_max + 1, p, q, bx, by, 0, lambda);
+    dRN         = RNp1 - RN;
+    R1          = secantSolve(sqrt(N_min*lambda*f), 0, N_min, p, q, bx, by, 0, lambda);
+    R2          = secantSolve(sqrt((N_min + 1)*lambda*f), 0, N_min + 1, p, q, bx, by, 0, lambda);
+    dR1         = R2 - R1;
+
+    // Define area fraction (nominal area)/(biased or new area)
+    if (computeDoseByGriddedAreaFraction){ 
+        // Smallest area fraction
+        minAreaFraction = 1;
+
+        // Largest possible area fraction
+        maxAreaFraction  = (dRN + blockGrid_um)/(dRN - bias_um - blockGrid_um);
+    } else {
+        maxAreaFraction     = dRN / (dRN - bias_um); // furthest from 1 to 1 i.e. (1.24)
+        minAreaFraction     = dR1 / (dR1 - bias_um); // closest to 1 i.e. (1.02)
+    }
+
+    maxRelDose = maxAreaFraction;
+    minRelDose = minAreaFraction;
+
+    
+    switch (File_format){
+        case 0: // NWA (arc)
+            if ((outputFile = fopen(strcat(fileName, ".nwa"), "wb")) == NULL)
+                printf("Cannot open file.\n");
+            setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
+            initARC(offsetX, offsetY, nwaUnit, outputFile);
+            break;
+        case 1: // GDS
+            dbscale = 10000; // db unit to microns
+            if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
+                printf("Cannot open file.\n");
+            setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
+            initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm, layerNumber);
+            break;
+        case 2://GDS + txt
+            dbscale = 10000; // db unit to microns
+            if ((outputFile = fopen(strcat(fileName, ".gds"), "wb")) == NULL)
+                printf("Cannot open file.\n");
+            setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
+            initGDS(outputFile, gdsPost, polyPre, polyPost, polyForm, layerNumber);
+            if ((supportTextFile = fopen(strcat(fileName, ".txt"), "wb")) == NULL)
+                printf("Cannot open file.\n");
+
+            writeSupportTxtHeader(dR1, dRN, bias_um, supportTextFile);
+            break;
+        case 3: // WRV
+            dbscale = 1000000/block_unit_size_pm; // db unit to microns
+            if ((outputFile = fopen(strcat(fileName, ".wrv"), "wb")) == NULL)
+                printf("Cannot open file.\n");
+            setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
+            initWRV(outputFile, minRelDose, maxRelDose, block_size, block_unit_size_pm);
+            break;
+        case 4: // GTX
+            dbscale = 1000000/block_unit_size_pm; // db unit to microns
+            if ((outputFile = fopen(strcat(fileName, ".gtx"), "wb")) == NULL)
+                printf("Cannot open file.\n");
+            setvbuf(outputFile, NULL, _IONBF, 0);  // Disable buffering
+            initGTX(outputFile, block_unit_size_pm/1000000, (long)offsetX, (long)offsetY);
+            break;
+    }
+
+    long clockSpeed;
     bool isGapZone = false;
 
     // If we're printing obscuration only, then set N to 0:
@@ -374,6 +543,7 @@ void makeZP(
     {
         bool useMergedPolygon = false;
         bool isFirstSegment = false;
+        long mergedClockSpeed = 0;
         long accumulatedSegmentCount = 0;  // Track segments in current accumulated arc
         int mergedPolygonCount = 0;  // Track number of merged polygons exported for this zone
         innerVertexCount = 0;
@@ -384,7 +554,7 @@ void makeZP(
         // }
         // Compute initial R at an arbitrary angle.  This will seed information regarding RoC for zone tol:
         Rn          = secantSolve(rGuess, 0, n, p, q, bx, by, 0, lambda);
-        Rnp1        = secantSolve(rGuessp1, 0, n + 2*dutyCycle, p, q, bx, by, 0, lambda);
+        Rnp1        = secantSolve(rGuessp1, 0, n + 1, p, q, bx, by, 0, lambda);
         dr         = Rnp1 - Rn;
 
         // Use current zone radii for new guesses
@@ -495,7 +665,7 @@ void makeZP(
             
         //  1) Using current angle, compute baseline Rn for n (no added phase component)
             Rn          = secantSolve(Rn, currentAngle, n, p, q, bx, by, 0, lambda);
-            Rnp1        = secantSolve(Rnp1, currentAngle, n + 2*dutyCycle, p, q, bx, by, 0, lambda);
+            Rnp1        = secantSolve(Rnp1, currentAngle, n + 1, p, q, bx, by, 0, lambda);
 
         //  2) Use computed Rn and currentAngle to compute [cx,cy] to figure out phase and amplitude
             zpRTh2PCCxCy(Rn, currentAngle, k_0, p, bx, by, lambda, NA, PC, anamorphicAzimuth);
@@ -516,7 +686,8 @@ void makeZP(
                     int numArcPolys = exportAccumulatedArc(innerEdgeVertices, innerVertexCount,
                                                            outerEdgeVertices, outerVertexCount,
                                                            accumulatedSegmentCount, polyPre, polyPost,
-                                                           polyForm, outputFile, File_format);
+                                                           polyForm, outputFile, File_format,
+                                                           mergedClockSpeed, blockGrid_pixels);
                     totalPoly += numArcPolys;
                     mergedPolygonCount += numArcPolys;
 
@@ -531,11 +702,9 @@ void makeZP(
                 continue;
             }
 
-        // * 3) Recompute Rn_p and Rnp1_p with phase correction (skip if no phase)
-            if (phase != 0) {
-                Rn          = secantSolve(Rn, currentAngle, n, p, q, bx, by, phase, lambda);
-                Rnp1        = secantSolve(Rnp1, currentAngle, n + 2*dutyCycle, p, q, bx, by, phase, lambda);
-            }
+        // * 3) Recompute Rn_p and Rnp1_p and [cx, cy] with new phase
+            Rn          = secantSolve(Rn, currentAngle, n, p, q, bx, by, phase, lambda);
+            Rnp1        = secantSolve(Rnp1, currentAngle, n + 1, p, q, bx, by, phase, lambda);
 
             // Compute CM to optimized trap to arc and trap coords
             dr = Rnp1 - Rn;
@@ -545,103 +714,129 @@ void makeZP(
             Rnpa2          = secantSolve(Rn, currentAngle + alpha/2, n, p, q, bx, by, phase, lambda);
             Rnma2          = secantSolve(Rn, currentAngle - alpha/2, n, p, q, bx, by, phase, lambda);
 
+
             drawAngle = currentAngle;
-
-            // Unbiased CM radii
-            tR1nb = (RCM - dr/2)*1/cos(alpha/2);
-            tR2nb = (RCM + dr/2)*1/cos(alpha/2);
-
-            // Appy biases
-            if (isGapZone){
-                tR1 = tR1nb - bias_um/2;
-                tR2 = tR2nb + bias_um/2;
-            } else {
-                tR1 = tR1nb + bias_um/2;
-                tR2 = tR2nb - bias_um/2;
+            if (File_format == 4){ // GTX
+                doseBias = dr / (dr - bias_um); // Inverse of zone area bias
+                if (isGapZone)
+                {
+                    exportArcGTX(Rn - bias_um / 2, dr + bias_um, drawAngle, alpha, doseBias, ((double)(block_unit_size_pm))/1000000, 0, 0, outputFile);
+                }
+                else
+                {
+                    exportArcGTX(Rn + bias_um / 2, dr - bias_um, drawAngle, alpha, doseBias, ((double)(block_unit_size_pm))/1000000, 0, 0, outputFile);
+                }
             }
+            else { // GDS or WRV format
+                
+                // Unbiased CM radii
+                tR1nb = (RCM - dr/2)*1/cos(alpha/2);
+                tR2nb = (RCM + dr/2)*1/cos(alpha/2);
 
-            // Compute corrected radii at the edges of trap instead of center:
-            tR1ma = tR1 + (Rnma2 - Rn);
-            tR1pa = tR1 + (Rnpa2 - Rn);
-            tR2ma = tR2 + (Rnma2 - Rn);
-            tR2pa = tR2 + (Rnpa2 - Rn);
-
-            // version with no bias
-            tR1manb = tR1nb + (Rnma2 - Rn);
-            tR1panb = tR1nb + (Rnpa2 - Rn);
-            tR2manb = tR2nb + (Rnma2 - Rn);
-            tR2panb = tR2nb + (Rnpa2 - Rn);
-
-            // Coordinates of trap in real distance
-            double trapCoords_um[8];
-                trapCoords_um[0] = (tR1ma*cos(drawAngle - alpha/2) + offsetX);
-                trapCoords_um[1] = (tR1ma*sin(drawAngle - alpha/2) + offsetY);
-                trapCoords_um[2] = (tR1pa*cos(drawAngle + alpha/2) + offsetX);
-                trapCoords_um[3] = (tR1pa*sin(drawAngle + alpha/2) + offsetY);
-                trapCoords_um[4] = (tR2pa*cos(drawAngle + alpha/2) + offsetX);
-                trapCoords_um[5] = (tR2pa*sin(drawAngle + alpha/2) + offsetY);
-                trapCoords_um[6] = (tR2ma*cos(drawAngle - alpha/2) + offsetX);
-                trapCoords_um[7] = (tR2ma*sin(drawAngle - alpha/2) + offsetY);
-
-
-            // Coordinates rounded to pixel scale
-            double trapCoords[10];
-                trapCoords[0] =  dbscale*trapCoords_um[0];
-                trapCoords[1] =  dbscale*trapCoords_um[1];
-                trapCoords[2] =  dbscale*trapCoords_um[2];
-                trapCoords[3] =  dbscale*trapCoords_um[3];
-                trapCoords[4] =  dbscale*trapCoords_um[4];
-                trapCoords[5] =  dbscale*trapCoords_um[5];
-                trapCoords[6] =  dbscale*trapCoords_um[6];
-                trapCoords[7] =  dbscale*trapCoords_um[7];
-                trapCoords[8] =  dbscale*trapCoords_um[0];
-                trapCoords[9] =  dbscale*trapCoords_um[1];
-
-            // Export shape: either accumulate vertices or write individual quad
-            if (useMergedPolygon) {
-                // For merged polygon: accumulate inner and outer edges separately
-                // Inner edge marches CCW, outer edge will be reversed to march CW back
-                if (isFirstSegment) {
-                    // First segment: add starting vertices for both edges
-                    innerEdgeVertices[innerVertexCount++] = trapCoords[0]; // inner minus x
-                    innerEdgeVertices[innerVertexCount++] = trapCoords[1]; // inner minus y
-
-                    outerEdgeVertices[outerVertexCount++] = trapCoords[6]; // outer minus x
-                    outerEdgeVertices[outerVertexCount++] = trapCoords[7]; // outer minus y
-
-                    isFirstSegment = false;
+                // Appy biases
+                if (isGapZone){
+                    tR1 = tR1nb - bias_um/2;
+                    tR2 = tR2nb + bias_um/2;
+                } else {
+                    tR1 = tR1nb + bias_um/2;
+                    tR2 = tR2nb - bias_um/2;
                 }
+                
+                // Compute corrected radii at the edges of trap instead of center:
+                tR1ma = tR1 + (Rnma2 - Rn);
+                tR1pa = tR1 + (Rnpa2 - Rn);
+                tR2ma = tR2 + (Rnma2 - Rn);
+                tR2pa = tR2 + (Rnpa2 - Rn);
 
-                // All segments: add plus-side vertices
-                innerEdgeVertices[innerVertexCount++] = trapCoords[2]; // inner plus x
-                innerEdgeVertices[innerVertexCount++] = trapCoords[3]; // inner plus y
+                // version with no bias
+                tR1manb = tR1nb + (Rnma2 - Rn);
+                tR1panb = tR1nb + (Rnpa2 - Rn);
+                tR2manb = tR2nb + (Rnma2 - Rn);
+                tR2panb = tR2nb + (Rnpa2 - Rn);
+  
+                // Coordinates of trap in real distance
+                double trapCoords_um[8];
+                    trapCoords_um[0] = (tR1ma*cos(drawAngle - alpha/2) + offsetX);
+                    trapCoords_um[1] = (tR1ma*sin(drawAngle - alpha/2) + offsetY);
+                    trapCoords_um[2] = (tR1pa*cos(drawAngle + alpha/2) + offsetX);
+                    trapCoords_um[3] = (tR1pa*sin(drawAngle + alpha/2) + offsetY);
+                    trapCoords_um[4] = (tR2pa*cos(drawAngle + alpha/2) + offsetX);
+                    trapCoords_um[5] = (tR2pa*sin(drawAngle + alpha/2) + offsetY);
+                    trapCoords_um[6] = (tR2ma*cos(drawAngle - alpha/2) + offsetX);
+                    trapCoords_um[7] = (tR2ma*sin(drawAngle - alpha/2) + offsetY);
+            
 
-                outerEdgeVertices[outerVertexCount++] = trapCoords[4]; // outer plus x
-                outerEdgeVertices[outerVertexCount++] = trapCoords[5]; // outer plus y
+                // Coordinates rounded to pixel scale
+                double trapCoords[10];
+                    trapCoords[0] =  dbscale*trapCoords_um[0];
+                    trapCoords[1] =  dbscale*trapCoords_um[1];
+                    trapCoords[2] =  dbscale*trapCoords_um[2];
+                    trapCoords[3] =  dbscale*trapCoords_um[3];
+                    trapCoords[4] =  dbscale*trapCoords_um[4];
+                    trapCoords[5] =  dbscale*trapCoords_um[5];
+                    trapCoords[6] =  dbscale*trapCoords_um[6];
+                    trapCoords[7] =  dbscale*trapCoords_um[7];
+                    trapCoords[8] =  dbscale*trapCoords_um[0];
+                    trapCoords[9] =  dbscale*trapCoords_um[1];
 
-                accumulatedSegmentCount++;  // Track number of segments in this arc
 
-                // Check if we've hit the vertex limit - export arc if needed
-                int totalVertices = (innerVertexCount / 2) + (outerVertexCount / 2) + 1;
-                const int MAX_GDS_VERTICES = 200;
-                if (totalVertices >= MAX_GDS_VERTICES) {
-                    int numArcPolys = exportAccumulatedArc(innerEdgeVertices, innerVertexCount,
-                                                           outerEdgeVertices, outerVertexCount,
-                                                           accumulatedSegmentCount, polyPre, polyPost,
-                                                           polyForm, outputFile, File_format);
-                    totalPoly += numArcPolys;
-                    mergedPolygonCount += numArcPolys;
+                if (computeDoseByGriddedAreaFraction){
+                    // compute clockspeed by area fraction, (not working right now):
+                    clockSpeed = getPolyClockSpeedFromRadiusRatio(minAreaFraction, maxAreaFraction, dr, trapCoords, dbscale, blockGrid_pixels);
 
-                    // Reset buffers for next arc segment
-                    innerVertexCount = 0;
-                    outerVertexCount = 0;
-                    accumulatedSegmentCount = 0;
-                    isFirstSegment = true;
+                } else {
+                    // Old way to compute clock speed, still working
+                    clockSpeed = getPolyClockSpeed(dR1, dRN, dr, bias_um);
+                 }
+
+                // Export shape: either accumulate vertices or write individual quad
+                if (useMergedPolygon) {
+                    // For merged polygon: accumulate inner and outer edges separately
+                    // Inner edge marches CCW, outer edge will be reversed to march CW back
+                    if (isFirstSegment) {
+                        // First segment: add starting vertices for both edges
+                        innerEdgeVertices[innerVertexCount++] = trapCoords[0]; // inner minus x
+                        innerEdgeVertices[innerVertexCount++] = trapCoords[1]; // inner minus y
+
+                        outerEdgeVertices[outerVertexCount++] = trapCoords[6]; // outer minus x
+                        outerEdgeVertices[outerVertexCount++] = trapCoords[7]; // outer minus y
+
+                        mergedClockSpeed = clockSpeed;
+                        isFirstSegment = false;
+                    }
+
+                    // All segments: add plus-side vertices
+                    innerEdgeVertices[innerVertexCount++] = trapCoords[2]; // inner plus x
+                    innerEdgeVertices[innerVertexCount++] = trapCoords[3]; // inner plus y
+
+                    outerEdgeVertices[outerVertexCount++] = trapCoords[4]; // outer plus x
+                    outerEdgeVertices[outerVertexCount++] = trapCoords[5]; // outer plus y
+
+                    accumulatedSegmentCount++;  // Track number of segments in this arc
+
+                    // Check if we've hit the vertex limit - export arc if needed
+                    int totalVertices = (innerVertexCount / 2) + (outerVertexCount / 2) + 1;
+                    const int MAX_GDS_VERTICES = 200;
+                    if (totalVertices >= MAX_GDS_VERTICES) {
+                        int numArcPolys = exportAccumulatedArc(innerEdgeVertices, innerVertexCount,
+                                                               outerEdgeVertices, outerVertexCount,
+                                                               accumulatedSegmentCount, polyPre, polyPost,
+                                                               polyForm, outputFile, File_format,
+                                                               mergedClockSpeed, blockGrid_pixels);
+                        totalPoly += numArcPolys;
+                        mergedPolygonCount += numArcPolys;
+
+                        // Reset buffers for next arc segment
+                        innerVertexCount = 0;
+                        outerVertexCount = 0;
+                        accumulatedSegmentCount = 0;
+                        isFirstSegment = true;
+                    }
+
+                } else {
+                    // Non-merged mode: export individual quad (backward compatibility)
+                    exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, clockSpeed, blockGrid_pixels, 5);
                 }
-
-            } else {
-                // Non-merged mode: export individual quad (backward compatibility)
-                exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 0, 0, 5);
             }
 
             trapCount++;
@@ -680,7 +875,8 @@ void makeZP(
                             int numArcPolys = exportAccumulatedArc(innerEdgeVertices, innerVertexCount,
                                                                    outerEdgeVertices, outerVertexCount,
                                                                    accumulatedSegmentCount, polyPre, polyPost,
-                                                                   polyForm, outputFile, File_format);
+                                                                   polyForm, outputFile, File_format,
+                                                                   mergedClockSpeed, blockGrid_pixels);
                             totalPoly += numArcPolys;
                             mergedPolygonCount += numArcPolys;
 
@@ -711,7 +907,8 @@ void makeZP(
             int numPolygons = exportAccumulatedArc(innerEdgeVertices, innerVertexCount,
                                                    outerEdgeVertices, outerVertexCount,
                                                    accumulatedSegmentCount, polyPre, polyPost,
-                                                   polyForm, outputFile, File_format);
+                                                   polyForm, outputFile, File_format,
+                                                   mergedClockSpeed, blockGrid_pixels);
             totalPoly += numPolygons;
             mergedPolygonCount += numPolygons;
 
@@ -752,7 +949,10 @@ void makeZP(
             if (shouldPrint) {
                 char vertexCountStr[32];
                 formatVertexCount(totalVertexCount, vertexCountStr);
-                printf("Finished zone %d with %ld traps.  \tR_%d = %0.5f [total: %s vertices]\n", n, trapCount, n, Rn, vertexCountStr);
+                if (File_format == 0)
+                    printf("Finished zone %d with %ld arcs [total: %s vertices]\n", n, trapCount, vertexCountStr);
+                else
+                    printf("Finished zone %d with %ld traps.  \tR_%d = %0.5f [total: %s vertices]\n", n, trapCount, n, Rn, vertexCountStr);
                 fflush(outputFile);  // Flush file buffer periodically
             }
         }
@@ -760,8 +960,8 @@ void makeZP(
 
     } // End zone loop
 
-    // Write obscuration
-    if (Opposite_Tone && obscurationSigma > 0)
+    // Write obscuration.  Note: cannot write obscuration in arcs presently
+    if (Opposite_Tone && obscurationSigma > 0 && File_format != 0 && File_format != 4)
     {
         printf("Writing obscuration with sigma: %0.2f\n", obscurationSigma);
         printf("Obscuration anamorphic factor: %0.2f\n", anamorphicFac);
@@ -831,13 +1031,30 @@ void makeZP(
             trapCoords[9] =  dbscale*(offsetY + sin(azRot)*qXCoords[k] + cos(azRot) * qYCoords[k]);
 
             // Export shape (obscuration uses 4-vertex quads)
-            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535, 0, 5);
+            exportPolygon(trapCoords, polyPre, polyPost, polyForm, outputFile, File_format, 65535, blockGrid_pixels, 5);
 
         }
     }
 
-    // Finalize GDS file
-    renderGDS(outputFile, gdsPost);
+    switch (File_format)
+    {
+    case 0: // arc
+        renderARC(outputFile);
+        break;
+    case 1: // GDS
+        renderGDS(outputFile, gdsPost);
+        break;
+    case 2: // GDS + txt
+        renderGDS(outputFile, gdsPost);
+        fclose(supportTextFile);
+        break;
+    case 3: // WRV
+        renderWRV(outputFile);
+        break;
+    case 4: // GTX
+        renderGTX(outputFile);
+        break;
+    }
 
     clock_t end = clock();
     double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
@@ -858,7 +1075,7 @@ int main(int argc, char **argv){
     double * by = new double[3]; // Zone plate basis vector y
 
     double zTol, lambda_nm, q, obscurationSigma, NA, anamorphicFac, anamorphicAzimuth, ZPCPhase, APD, APD_window, ZPCR2, ZPCR1, bias_nm,
-    buttressGapWidth, buttressPeriod, dutyCycle;
+    buttressGapWidth, buttressPeriod, blockGrid_pm;
     int nZerns, customMaskIdx, File_format, Opposite_Tone, randomizeZoneStart, FSIdx, layerNumber, nwaUnitSelection, NoP, IoP;
     long block_size;
     char * fileName;
@@ -951,12 +1168,12 @@ int main(int argc, char **argv){
                 0, //FSIdx, 
                 0, //buttressGapWidth, 
                 0, //buttressPeriod, 
-                0, //block_size,
-                0, //NoP,
-                0, //IoP,
-                0, //dutyCycle (will default to 0.5),
-                0, //layerNumber,
-                0, //nwaUnitSelection,
+                0, //block_size, 
+                0, //NoP, 
+                0, //IoP, 
+                0, //blockGrid_pm, 
+                0, //layerNumber, 
+                0, //nwaUnitSelection, 
                 fileName //fileName
         );
 
@@ -1025,7 +1242,7 @@ printf("Reading input params\n");
     block_size          = atol(*(argv_test++));
     NoP                 = atoi(*(argv_test++));
     IoP                 = atoi(*(argv_test++));
-    dutyCycle           = atof(*(argv_test++)); // duty cycle (0 = default to 0.5)
+    blockGrid_pm        = atof(*(argv_test++)); // block grid (WRV)
 
 
     layerNumber         = atoi(*(argv_test++));
@@ -1059,12 +1276,12 @@ printf("Reading input params\n");
         FSIdx, 
         buttressGapWidth, 
         buttressPeriod, 
-        block_size,
-        NoP,
-        IoP,
-        dutyCycle,
-        layerNumber,
-        nwaUnitSelection,
+        block_size, 
+        NoP, 
+        IoP, 
+        blockGrid_pm, 
+        layerNumber, 
+        nwaUnitSelection, 
         fileName);
 
     return 0;

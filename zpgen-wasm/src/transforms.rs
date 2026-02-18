@@ -174,6 +174,66 @@ pub fn freq_to_zp_xyz(
     Some([t * l[0], t * l[1], t * l[2]])
 }
 
+/// Convert spatial frequency to zone plate XYZ coordinates (optimized version with pre-normalized normal)
+///
+/// This is an optimized version that assumes n_hat is already normalized,
+/// avoiding redundant normalization in hot loops.
+pub fn freq_to_zp_xyz_normalized(
+    f: &[f64; 2],
+    n_hat: &[f64; 3],
+    p_on_plane: &[f64; 3],
+    lambda: f64,
+) -> Option<[f64; 3]> {
+    let fx = f[0];
+    let fy = f[1];
+
+    // 1) Build unit direction l from spatial frequencies
+    let s2 = (lambda * fx) * (lambda * fx) + (lambda * fy) * (lambda * fy);
+    if s2 > 1.0 {
+        // Evanescent: no real propagation direction
+        return None;
+    }
+
+    let lz = (1.0 - s2).max(0.0).sqrt();
+    let mut l = [lambda * fx, lambda * fy, lz]; // already unit length
+
+    // 2) Use pre-normalized plane normal (skip normalization)
+    let n = n_hat;
+
+    // 3) Choose lz sign so intersection is in front of the origin (t >= 0) if possible
+    // Compute denom with current sign
+    let mut denom = scalar_dot_product(&l, n);
+    let numer = scalar_dot_product(p_on_plane, n);
+
+    if denom == 0.0 {
+        // Try flipping lz once; if still zero, it's parallel
+        l[2] = -l[2];
+        denom = scalar_dot_product(&l, n);
+        if denom == 0.0 {
+            return None;
+        }
+    }
+
+    let mut t = numer / denom;
+
+    // If you require forward intersection only (t >= 0), try flipping lz once to see if that helps
+    if t < 0.0 {
+        l[2] = -l[2];
+        denom = scalar_dot_product(&l, n);
+        if denom == 0.0 {
+            return None;
+        }
+        t = numer / denom;
+        if t < 0.0 {
+            // Plane is behind the chosen propagation direction
+            return None;
+        }
+    }
+
+    // 4) Intersection point
+    Some([t * l[0], t * l[1], t * l[2]])
+}
+
 /// Composite function: ZP (R, theta) to pupil coordinates (cx, cy)
 ///
 /// Port from zpUtils.cpp lines 693-717

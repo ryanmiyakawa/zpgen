@@ -74,11 +74,35 @@ impl WasmZPGenerator {
         self.progress_callback = Some(callback);
     }
 
+    /// Compute zone information (count, bounds, parent NA) without generating geometry
+    /// This is a lightweight calculation for UI preview
+    #[wasm_bindgen(js_name = computeZoneCount)]
+    pub fn compute_zone_count(&self, params_js: JsValue) -> Result<JsValue, JsValue> {
+        // Deserialize parameters from JavaScript
+        let params: ZPParams = serde_wasm_bindgen::from_value(params_js)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse parameters: {:?}", e)))?;
+
+        // Compute zone info
+        let zone_info = self.inner
+            .compute_zone_count(&params)
+            .map_err(|e| JsValue::from_str(&format!("Zone count calculation failed: {:?}", e)))?;
+
+        // Serialize to JavaScript object
+        serde_wasm_bindgen::to_value(&zone_info)
+            .map_err(|e| JsValue::from_str(&format!("Failed to serialize zone info: {:?}", e)))
+    }
+
     #[wasm_bindgen]
     pub fn generate(&mut self, params_js: JsValue) -> Result<(), JsValue> {
         // Deserialize parameters from JavaScript
         let params: ZPParams = serde_wasm_bindgen::from_value(params_js)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse parameters: {:?}", e)))?;
+
+        // Log deserialized params so we can verify what WASM actually received
+        web_sys::console::log_1(&format!(
+            "[WASM] generate() params: p={:?}, q={}, na={}, lambda_nm={}, duty_cycle={}",
+            params.p, params.q, params.na, params.lambda_nm, params.duty_cycle
+        ).into());
 
         // Set up progress callback
         if let Some(ref cb) = self.progress_callback {
@@ -102,7 +126,7 @@ impl WasmZPGenerator {
         // Generate zone plate
         self.inner
             .generate(&params, &mut writer)
-            .map_err(|e| JsValue::from_str(&format!("Generation failed: {:?}", e)))?;
+            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))?;
 
         Ok(())
     }
@@ -139,6 +163,7 @@ export interface ZPParams {
     buttressPeriod: number;
     dutyCycle: number;
     layerNumber: number;
+    maxGdsVertices: number;
 }
 
 export interface ProgressUpdate {

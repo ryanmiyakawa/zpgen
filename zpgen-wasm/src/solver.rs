@@ -52,11 +52,54 @@ pub fn secant_solve(
     let mut r1 = dr_guess;
     let mut r2 = r1 * 1.02;
 
-    for _iter in 0..MAX_ITER {
+    // Debug log initial guess
+    // #[cfg(target_arch = "wasm32")]
+    // if phase.abs() > 0.8 || dr_guess < 0.0 {
+    //     web_sys::console::log_1(&format!(
+    //         "Secant starting: theta={:.4}, phase={:.4}, initial_guess={:.6}, n={}",
+    //         th, phase, dr_guess, n
+    //     ).into());
+    // }
+
+    for iter in 0..MAX_ITER {
         let fr1 = objective_fn(r1, th, n, p, q0, bx, by, phase, lambda);
         let fr2 = objective_fn(r2, th, n, p, q0, bx, by, phase, lambda);
 
-        let r0 = r1 - fr1 * (r1 - r2) / (fr1 - fr2);
+        let denominator = fr1 - fr2;
+
+        // Check for problematic denominator
+        if denominator.abs() < 1e-15 {
+            return Err(format!(
+                "SECANT DENOMINATOR TOO SMALL at theta={}, iter={}, fr1={}, fr2={}, r1={}, r2={}",
+                th, iter, fr1, fr2, r1, r2
+            ));
+        }
+
+        let r0 = r1 - fr1 * (r1 - r2) / denominator;
+
+        // Check for invalid radius
+        if !r0.is_finite() {
+            return Err(format!(
+                "SECANT PRODUCED NON-FINITE RADIUS at theta={}, iter={}, r0={}, fr1={}, fr2={}",
+                th, iter, r0, fr1, fr2
+            ));
+        }
+
+        if r0 < 0.0 {
+            return Err(format!(
+                "SECANT PRODUCED NEGATIVE RADIUS at theta={}, iter={}, r0={}, fr1={}, fr2={}",
+                th, iter, r0, fr1, fr2
+            ));
+        }
+
+        // Debug logging for spiral phase at problematic angles
+        // #[cfg(target_arch = "wasm32")]
+        // if phase > 0.4 && phase < 0.6 && iter < 5 {
+        //     web_sys::console::log_1(&format!(
+        //         "Secant iter {}: theta={:.4}, phase={:.4}, r1={:.6}, fr1={:.6}, r2={:.6}, fr2={:.6}, r0={:.6}",
+        //         iter, th, phase, r1, fr1, r2, fr2, r0
+        //     ).into());
+        // }
 
         // Check convergence
         if (r0 - r1).abs() < TOL_X {
@@ -68,7 +111,10 @@ pub fn secant_solve(
         r1 = r0;
     }
 
-    Err(format!("MAXIMUM ITERATIONS REACHED at theta={}", th))
+    Err(format!(
+        "MAXIMUM ITERATIONS REACHED at theta={}, phase={}, final_r={}, final_f={}",
+        th, phase, r1, objective_fn(r1, th, n, p, q0, bx, by, phase, lambda)
+    ))
 }
 
 #[cfg(test)]

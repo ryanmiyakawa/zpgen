@@ -4,10 +4,13 @@
 use crate::gds::{export_polygon, init_gds, render_gds, GdsError, GdsWriter};
 use crate::geometry::{b_is_in_custom_mask, b_is_in_geometry, custom_phase};
 use crate::solver::secant_solve;
-use crate::transforms::{cross_product, freq_to_zp_xyz, norm2, xyz_to_opl, zp_rth_to_pc_cxcy};
+use crate::transforms::{cross_product, freq_to_zp_xyz_normalized, norm2, norm_vector, xyz_to_opl, zp_rth_to_pc_cxcy};
 use crate::zernike::get_phase_term;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
+
+#[cfg(target_arch = "wasm32")]
+use js_sys::Math;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ZPParams {
@@ -38,6 +41,15 @@ pub struct ZPParams {
     pub buttress_period: f64,
     pub duty_cycle: f64,
     pub layer_number: i32,
+    pub max_gds_vertices: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZoneInfo {
+    pub n_zones: i32,
+    pub n_min: i32,
+    pub n_max: i32,
+    pub parent_na: f64,
 }
 
 pub struct ZPGenerator {
@@ -56,6 +68,79 @@ impl ZPGenerator {
         F: Fn(f64, i32, i32) + 'static,
     {
         self.progress_callback = Some(Box::new(callback));
+    }
+
+    /// Compute zone information including count, bounds, and parent NA
+    ///
+    /// This is a lightweight calculation that only computes zone boundaries
+    /// without generating any geometry. Useful for UI preview.
+    pub fn compute_zone_count(&self, params: &ZPParams) -> Result<ZoneInfo, GdsError> {
+        let lambda = params.lambda_nm / 1000.0; // nm to um
+
+        // Define plane normal
+        let n_hat = cross_product(&params.bx, &params.by);
+
+        // Make a mutable copy of p to handle virtual objects
+        let mut p = params.p;
+        if p[2] < 0.0 {
+            p[2] = p[2].abs();
+        }
+
+        // Compute N_max and N_min from the loop
+        let (n_min, n_max, _fq_max_mag) = self.compute_zone_bounds(&params, &p, &n_hat, lambda)?;
+        let total_zones = (n_max - n_min) / 2 + 1;
+
+        // Compute parent NA by solving for r_max corresponding to N_max
+        // Use initial guess based on focal length
+        let p_norm = norm2(&p);
+        let f = 1.0 / (1.0 / p_norm * p[2].signum() + 1.0 / params.q);
+        let r_guess = (n_max as f64 * lambda * f).sqrt();
+
+        // Solve for r_max at theta=0 for N_max
+        let r_max = secant_solve(
+            r_guess,
+            0.0,
+            n_max as f64,
+            &p,
+            params.q,
+            &params.bx,
+            &params.by,
+            0.0,
+            lambda,
+        )
+        .map_err(|e| GdsError::InvalidData(e))?;
+
+        // Convert r_max to spatial frequency
+        // f = r / (lambda * sqrt(r^2 + z^2)) where z is the distance along optical axis
+        // For the zone plate, this is approximately f = r / (lambda * f_focal)
+        // But more accurately: construct the k-vector from the geometry
+        let ux = r_max; // at theta=0
+        let uy = 0.0;
+        let u = [ux, uy, 0.0];
+
+        // Convert to XYZ coordinates
+        let r_xyz = [
+            p[0] + u[0] * params.bx[0] + u[1] * params.by[0],
+            p[1] + u[0] * params.bx[1] + u[1] * params.by[1],
+            p[2] + u[0] * params.bx[2] + u[1] * params.by[2],
+        ];
+
+        // Convert to k-vector (normalized direction)
+        let r_norm = norm2(&r_xyz);
+        let k = [r_xyz[0] / r_norm, r_xyz[1] / r_norm];
+
+        // Spatial frequency magnitude
+        let f_max = (k[0] * k[0] + k[1] * k[1]).sqrt() / lambda;
+
+        // Parent NA = lambda * f_max
+        let parent_na = lambda * f_max;
+
+        Ok(ZoneInfo {
+            n_zones: total_zones,
+            n_min,
+            n_max,
+            parent_na,
+        })
     }
 
     /// Main zone plate generation function
@@ -87,12 +172,18 @@ impl ZPGenerator {
         };
 
         // Compute N_max and N_min (maximum and minimum zone numbers)
-        let (n_min, n_max) = self.compute_zone_bounds(&params, &p, &n_hat, lambda)?;
+        let (n_min, n_max, _fq_max) = self.compute_zone_bounds(&params, &p, &n_hat, lambda)?;
         let total_zones = (n_max - n_min) / 2 + 1;
 
         // Compute focal length for initial radius guesses
         let p_norm = norm2(&p);
         let f = 1.0 / (1.0 / p_norm * p[2].signum() + 1.0 / params.q);
+
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&format!(
+            "[WASM] zone bounds: n_min={}, n_max={}, total_zones={}, p_norm={}, f={}, lambda={}",
+            n_min, n_max, total_zones, p_norm, f, lambda
+        ).into());
 
         // Initialize GDS file
         init_gds(writer, params.layer_number)?;
@@ -101,12 +192,20 @@ impl ZPGenerator {
         let mut r_guess = (n_min as f64 * lambda * f).sqrt();
         let mut r_guess_p1 = ((n_min + 1) as f64 * lambda * f).sqrt();
 
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::log_1(&format!(
+            "[WASM] initial guesses: r_guess={}, r_guess_p1={}",
+            r_guess, r_guess_p1
+        ).into());
+
         let dbscale = 10000.0; // db unit to microns
-        const MAX_ZONE_COORDS: usize = 16000;
 
         // Pre-allocate buffers for merged polygons
-        let mut inner_edge_vertices = vec![0.0; MAX_ZONE_COORDS];
-        let mut outer_edge_vertices = vec![0.0; MAX_ZONE_COORDS];
+        // Each vertex needs 2 coordinates (x, y), and we have inner + outer edges
+        // Allocate extra space to be safe (2x the max vertices per edge)
+        let max_coords_per_edge = params.max_gds_vertices * 2;
+        let mut inner_edge_vertices = vec![0.0; max_coords_per_edge];
+        let mut outer_edge_vertices = vec![0.0; max_coords_per_edge];
 
         // Zone generation loop
         for n in (n_min..=n_max).step_by(2) {
@@ -156,6 +255,10 @@ impl ZPGenerator {
                 2 => {
                     // Full zones + gaps
                     if n % 2 == params.opposite_tone as i32 {
+                        // Don't make gap zone for the last zone
+                        if n == n_max {
+                            continue;
+                        }
                         (true, dr * params.buttress_gap_width)
                     } else {
                         (false, 0.0)
@@ -187,22 +290,34 @@ impl ZPGenerator {
                 is_first_segment = true;
             }
 
-            // Start angle (randomization if needed)
-            let start_angle = if params.randomize_zone_start {
-                // Note: In WASM we'd need a different random source
-                0.0
+            // Start angle (randomization if needed, but disabled for spiral phase)
+            let start_angle = if params.randomize_zone_start && params.custom_mask_idx != 14 {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    // Use JavaScript's Math.random() for WASM
+                    Math::random() * 2.0 * PI
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    // For non-WASM builds (like tests), use a fallback
+                    0.0
+                }
             } else {
                 0.0
             };
 
-            let start_angle = if params.custom_mask_idx == 14 {
-                start_angle + PI
-            } else {
-                start_angle
-            };
+            // let start_angle = if params.custom_mask_idx == 14 {
+            //     start_angle + PI
+            // } else {
+            //     start_angle
+            // };
 
             let mut current_angle = start_angle;
             const ANGLE_EPSILON: f64 = 1e-6;
+
+            // Track arc start for buttressing gaps (FSIdx == 1 and 2)
+            let mut arc_start: f64 = -1.0;
+            let mut gap_zone_size: f64 = 0.0;
 
             // Angle loop
             while current_angle < start_angle + 2.0 * PI + ANGLE_EPSILON {
@@ -249,7 +364,13 @@ impl ZPGenerator {
                     params.zpcr1,
                     params.zpcr2,
                 );
-                phase += custom_phase(cx, cy, params.custom_mask_idx) / (2.0 * PI);
+
+                // Handle spiral phase (negate to spiral outward instead of inward):
+                if params.custom_mask_idx == 14 {
+                    phase -= current_angle / (2.0 * PI);
+                }
+                
+                // phase += custom_phase(cx, cy, params.custom_mask_idx) / (2.0 * PI);
 
                 // Check if point is in geometry
                 if !b_is_in_geometry(cx, cy, params.obscuration_sigma)
@@ -382,10 +503,11 @@ impl ZPGenerator {
                     outer_edge_vertices[outer_vertex_count + 1] = trap_coords[5];
                     outer_vertex_count += 2;
 
-                    // Check vertex limit
+                    // Note: C++ version does NOT split polygons within a zone for file size efficiency
+                    // GDS spec allows up to 8191 vertices per polygon
+                    // Only split if we exceed a very high limit to prevent buffer overflow
                     let total_vertices = (inner_vertex_count / 2) + (outer_vertex_count / 2) + 1;
-                    const MAX_GDS_VERTICES: usize = 200;
-                    if total_vertices >= MAX_GDS_VERTICES {
+                    if total_vertices >= params.max_gds_vertices {
                         self.export_accumulated_arc(
                             &inner_edge_vertices[..inner_vertex_count],
                             &outer_edge_vertices[..outer_vertex_count],
@@ -401,7 +523,62 @@ impl ZPGenerator {
                     export_polygon(writer, &trap_coords, params.layer_number, 5)?;
                 }
 
-                current_angle += alpha;
+                // Increment angle based on buttressing mode
+                // Port from zpGenHolo.cpp:649-705
+                if buttress_width == 0.0 {
+                    // No buttresses - simple increment
+                    current_angle += alpha;
+                } else if is_gap_zone {
+                    // FSIdx == 2: Gap zones (even zones)
+                    // Track cumulative gap zone size and add spacing when period is reached
+                    gap_zone_size += alpha;
+                    if gap_zone_size >= alpha_bt {
+                        current_angle += dr * params.buttress_period / rcm - alpha_bt;
+                        gap_zone_size = 0.0;
+                    } else {
+                        current_angle += alpha;
+                    }
+                } else {
+                    // FSIdx == 1 and 2: Regular zones with buttressing
+                    if alpha_bt > alpha_zt {
+                        // Multiple traps required to satisfy zone tolerance
+                        if arc_start < 0.0 {
+                            // Start tracking this arc segment
+                            arc_start = current_angle;
+                        }
+
+                        if (current_angle - arc_start + alpha) > alpha_bt {
+                            // Period exceeded - time to create a gap
+
+                            // Export accumulated arc before the gap
+                            if use_merged_polygon && inner_vertex_count > 0 {
+                                self.export_accumulated_arc(
+                                    &inner_edge_vertices[..inner_vertex_count],
+                                    &outer_edge_vertices[..outer_vertex_count],
+                                    writer,
+                                    params.layer_number,
+                                )?;
+
+                                // Reset buffers for next arc segment
+                                inner_vertex_count = 0;
+                                outer_vertex_count = 0;
+                                is_first_segment = true;
+                            }
+
+                            // Add gap spacing
+                            current_angle += alpha + dr * params.buttress_gap_width / rcm;
+
+                            // Reset arc tracking
+                            arc_start = -1.0;
+                        } else {
+                            // Continue building current arc segment
+                            current_angle += alpha;
+                        }
+                    } else {
+                        // Single trap satisfies zone tolerance - jump by full period
+                        current_angle += dr * params.buttress_period / rcm;
+                    }
+                }
             }
 
             // Export final accumulated arc for this zone
@@ -417,7 +594,9 @@ impl ZPGenerator {
             // Report progress
             if let Some(ref callback) = self.progress_callback {
                 let progress = (n - n_min) as f64 / (n_max - n_min) as f64;
-                callback(progress, n, total_zones);
+                let current_zone_index = ((n - n_min) / 2) + 1; // Convert zone number to 1-based index
+                let display_total = (n_max - n_min) / 2 + 1; // Total number of zones (only odd zones)
+                callback(progress, current_zone_index, display_total);
             }
         }
 
@@ -429,6 +608,8 @@ impl ZPGenerator {
 
     /// Compute zone number bounds from NA and sampling
     ///
+    /// Returns (n_min, n_max, fq_max_mag) where fq_max_mag is the maximum spatial frequency magnitude
+    ///
     /// Port from zpGenHolo.cpp lines 303-344
     fn compute_zone_bounds(
         &self,
@@ -436,10 +617,29 @@ impl ZPGenerator {
         p: &[f64; 3],
         n_hat: &[f64; 3],
         lambda: f64,
-    ) -> Result<(i32, i32), GdsError> {
-        let t_min = lambda / params.na;
-        let mut n_max = 1;
-        let mut n_min = 1;
+    ) -> Result<(i32, i32, f64), GdsError> {
+        // Account for anamorphic stretch: effective NA is larger when factor < 1
+        let effective_na = params.na / params.anamorphic_fac;
+        let t_min = lambda / effective_na;
+        let mut n_max = i32::MIN;
+        let mut n_min = i32::MAX;
+        let mut fq_max_mag = 0.0;
+
+        // Normalize n_hat once before the loop instead of 200 times inside freq_to_zp_xyz
+        let mut n_hat_normalized = *n_hat;
+        norm_vector(&mut n_hat_normalized);
+
+        // Cache the constant OPL value to avoid recalculating 200 times
+        let base_opl = xyz_to_opl(p, p, params.q, lambda);
+
+        // Check if p is within the NA circle centered at k_0
+        // p is a position vector, k_0 is a unit direction vector
+        // Normalize p to get its direction, then compare lateral (x,y) components
+        let p_norm = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+        let p_hat = [p[0] / p_norm, p[1] / p_norm, p[2] / p_norm];
+        let diff_xy = [p_hat[0] - params.k_0[0], p_hat[1] - params.k_0[1]];
+        let diff_xy_mag = (diff_xy[0] * diff_xy[0] + diff_xy[1] * diff_xy[1]).sqrt();
+        let includes_axis = diff_xy_mag < effective_na;
 
         let num_points = 200;
         for i in 0..num_points {
@@ -449,8 +649,8 @@ impl ZPGenerator {
                 1.0 / t_min * th.sin() + params.k_0[1] / lambda,
             ];
 
-            if let Some(r) = freq_to_zp_xyz(&fq, n_hat, p, lambda) {
-                let opd = xyz_to_opl(&r, p, params.q, lambda) - xyz_to_opl(p, p, params.q, lambda);
+            if let Some(r) = freq_to_zp_xyz_normalized(&fq, &n_hat_normalized, p, lambda) {
+                let opd = xyz_to_opl(&r, p, params.q, lambda) - base_opl;
 
                 let temp_n_min = (2.0 * opd) as i32;
                 let temp_n_max = (2.0 * opd) as i32 + 1;
@@ -461,10 +661,26 @@ impl ZPGenerator {
                 if temp_n_max > n_max {
                     n_max = temp_n_max;
                 }
+
+                // Track the maximum spatial frequency magnitude across all valid points
+                let fq_mag = (fq[0] * fq[0] + fq[1] * fq[1]).sqrt();
+                if fq_mag > fq_max_mag {
+                    fq_max_mag = fq_mag;
+                }
             }
         }
 
-        Ok((n_min, n_max))
+        // For on-axis zone plates (includes optical axis), minimum zone is always 1
+        if includes_axis {
+            n_min = 1;
+        }
+
+        // Zone 0 is the center point (zero OPD), not a real zone — clamp to 1
+        if n_min < 1 {
+            n_min = 1;
+        }
+
+        Ok((n_min, n_max, fq_max_mag))
     }
 
     /// Export accumulated arc polygon
@@ -552,6 +768,7 @@ mod tests {
             buttress_period: 0.0,
             duty_cycle: 0.5,
             layer_number: 0,
+            max_gds_vertices: 8191,
         };
 
         let generator = ZPGenerator::new();

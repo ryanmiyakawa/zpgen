@@ -5,6 +5,71 @@ use std::fs::File;
 use std::io::Write;
 
 #[test]
+fn test_tilted_finite_conjugate_generation() {
+    // End-to-end regression test: tilted ZP with finite conjugate
+    // should generate successfully without the grating artifact.
+    let tilt = 6.0_f64.to_radians();
+    let dist = 100.0;
+    let p = [dist * tilt.sin(), 0.0, dist * tilt.cos()];
+    let q = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt(); // q = |p|
+
+    let bx = [tilt.cos(), 0.0, -tilt.sin()];
+    let by = [0.0, 1.0, 0.0];
+
+    // Chief ray direction must point along the optical axis (p_hat)
+    let p_norm = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+    let k_0 = [p[0] / p_norm, p[1] / p_norm, p[2] / p_norm];
+
+    let params = ZPParams {
+        z_tol: 0.01,
+        lambda_nm: 13.5,
+        p,
+        q,
+        k_0,
+        bx,
+        by,
+        obscuration_sigma: 0.0,
+        na: 0.02,
+        n_zerns: 0,
+        zernike_orders: vec![],
+        custom_mask_idx: 0,
+        anamorphic_fac: 1.0,
+        anamorphic_azimuth: 0.0,
+        zpc_phase: 0.0,
+        apd: 0.0,
+        apd_window: 0.0,
+        zpcr2: 0.0,
+        zpcr1: 0.0,
+        bias_nm: 10.0,
+        opposite_tone: false,
+        randomize_zone_start: false,
+        fs_idx: 0,
+        buttress_gap_width: 0.0,
+        buttress_period: 0.0,
+        duty_cycle: 0.5,
+        layer_number: 0,
+        max_gds_vertices: 8191,
+    };
+
+    let generator = ZPGenerator::new();
+    let mut writer = VecGdsWriter::new();
+
+    let result = generator.generate(&params, &mut writer);
+    assert!(
+        result.is_ok(),
+        "Tilted finite conjugate generation failed: {:?}",
+        result.err()
+    );
+
+    let data = writer.into_inner();
+    assert!(
+        data.len() > 110,
+        "GDS output should contain zone plate data, got {} bytes",
+        data.len()
+    );
+}
+
+#[test]
 fn test_generate_small_zone_plate() {
     println!("Testing zone plate generation...");
 
@@ -37,6 +102,7 @@ fn test_generate_small_zone_plate() {
         buttress_period: 0.0,
         duty_cycle: 0.5,
         layer_number: 0,
+        max_gds_vertices: 8191,
     };
 
     let mut generator = ZPGenerator::new();
@@ -112,6 +178,7 @@ fn test_parameters_validation() {
             buttress_period: 0.0,
             duty_cycle: 0.5,
             layer_number: 0,
+            max_gds_vertices: 8191,
         };
 
         let generator = ZPGenerator::new();

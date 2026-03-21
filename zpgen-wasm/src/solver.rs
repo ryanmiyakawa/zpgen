@@ -130,11 +130,53 @@ mod tests {
         let by = [0.0, 1.0, 0.0];
         let lambda = 0.0135; // 13.5 nm in um
 
-        // Zone 10 should have radius around 14-15 um for f~100um
-        let result = secant_solve(14.0, 0.0, 10.0, &p, q, &bx, &by, 0.0, lambda);
+        // Zone 10: r ≈ sqrt(n * lambda * f) where f = p*q/(p+q) ≈ 99.9
+        // r ≈ sqrt(10 * 0.0135 * 99.9) ≈ 3.67 um
+        let result = secant_solve(4.0, 0.0, 10.0, &p, q, &bx, &by, 0.0, lambda);
 
         assert!(result.is_ok());
         let radius = result.unwrap();
-        assert!(radius > 10.0 && radius < 20.0, "Radius {} should be between 10 and 20 um", radius);
+        assert!(radius > 2.0 && radius < 6.0, "Radius {} should be between 2 and 6 um", radius);
+    }
+
+    #[test]
+    fn test_secant_solve_tilted_finite_conjugate() {
+        // Regression test: tilted ZP with finite conjugate should produce
+        // comparable radii at theta=0 and theta=PI (opposite sides of tilt).
+        // The old bug caused one side to behave like a grating.
+        use crate::transforms::norm2;
+
+        let tilt = 6.0_f64.to_radians();
+        let dist = 100.0;
+        let p = [dist * tilt.sin(), 0.0, dist * tilt.cos()];
+        let q0 = norm2(&p); // equal conjugates: q = |p|
+        let bx = [tilt.cos(), 0.0, -tilt.sin()];
+        let by = [0.0, 1.0, 0.0];
+        let lambda = 0.0135;
+
+        let n = 10.0;
+        let r_guess = 5.0;
+
+        // Solve at theta=0 and theta=PI
+        let r_0 = secant_solve(r_guess, 0.0, n, &p, q0, &bx, &by, 0.0, lambda);
+        let r_pi = secant_solve(r_guess, std::f64::consts::PI, n, &p, q0, &bx, &by, 0.0, lambda);
+
+        assert!(r_0.is_ok(), "Secant solve failed at theta=0: {:?}", r_0.err());
+        assert!(r_pi.is_ok(), "Secant solve failed at theta=PI: {:?}", r_pi.err());
+
+        let r0 = r_0.unwrap();
+        let rpi = r_pi.unwrap();
+
+        // Radii should be on the same order of magnitude (within 2x)
+        let ratio = r0 / rpi;
+        assert!(
+            ratio > 0.5 && ratio < 2.0,
+            "Radii at theta=0 ({}) and theta=PI ({}) should be comparable, ratio={}",
+            r0, rpi, ratio
+        );
+
+        // Both should be positive and reasonable
+        assert!(r0 > 0.1 && r0 < 50.0, "r(0) = {} out of range", r0);
+        assert!(rpi > 0.1 && rpi < 50.0, "r(PI) = {} out of range", rpi);
     }
 }

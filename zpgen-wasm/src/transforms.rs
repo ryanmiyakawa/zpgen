@@ -76,27 +76,20 @@ pub fn xyz_to_opl(r_o: &[f64; 3], p: &[f64; 3], q0: f64, lambda: f64) -> f64 {
     let p_norm = norm2(p);
     let p_hat = [p[0] / p_norm, p[1] / p_norm, p[2] / p_norm];
 
-    // distance from object (origin) to point r_o
+    // l1: source (origin) to zone plate point
     let l1 = norm2(r_o);
 
-    // projection of r_o onto the optical axis
-    let proj = r_o[0] * p_hat[0] + r_o[1] * p_hat[1] + r_o[2] * p_hat[2];
-
-    // how much farther along p we need to go to reach the image plane
-    let delta = q0 - proj;
-
-    // compute image point r_i = r_o + delta * p_hat
-    let r_i = [
-        r_o[0] + delta * p_hat[0],
-        r_o[1] + delta * p_hat[1],
-        r_o[2] + delta * p_hat[2],
+    // Image point at distance q0 from ZP center along optical axis
+    let q_point = [
+        p[0] + q0 * p_hat[0],
+        p[1] + q0 * p_hat[1],
+        p[2] + q0 * p_hat[2],
     ];
 
-    // distance from r_o to r_i
-    let l2_vec = [r_i[0] - r_o[0], r_i[1] - r_o[1], r_i[2] - r_o[2]];
+    // l2: zone plate point to image point (Euclidean)
+    let l2_vec = [q_point[0] - r_o[0], q_point[1] - r_o[1], q_point[2] - r_o[2]];
     let l2 = norm2(&l2_vec);
 
-    // return total optical path length in waves
     (l1 + l2) / lambda
 }
 
@@ -313,5 +306,81 @@ mod tests {
 
         let xyz = zpuxuy_to_xyz(&u, &p, &bx, &by);
         assert_eq!(xyz, [1.0, 2.0, 0.0]);
+    }
+
+    #[test]
+    fn test_xyz_to_opl_tilted_finite_conjugate_symmetry() {
+        // Regression test: tilted ZP with finite conjugate should have
+        // symmetric OPD on both sides of the tilt axis.
+        // With the old plane-projection model, one side produced a spurious
+        // linear OPD term causing grating artifacts.
+        let lambda = 0.0135; // 13.5 nm in um
+        let tilt = 6.0_f64.to_radians(); // 6 degree tilt about y-axis
+        let dist = 100.0;
+
+        // Tilted p vector (tilted in xz-plane)
+        let p = [dist * tilt.sin(), 0.0, dist * tilt.cos()];
+        // Finite conjugate: q0 = |p| (equal conjugates)
+        let q0 = norm2(&p);
+
+        // Tilted basis vectors
+        let bx = [tilt.cos(), 0.0, -tilt.sin()];
+        let by = [0.0, 1.0, 0.0];
+
+        // Reference OPL at center
+        let opl_center = xyz_to_opl(&p, &p, q0, lambda);
+
+        // Test OPD at symmetric points along the tilt axis (bx direction)
+        let r = 2.0; // 2 um offset
+        let r_plus = [
+            p[0] + r * bx[0],
+            p[1] + r * bx[1],
+            p[2] + r * bx[2],
+        ];
+        let r_minus = [
+            p[0] - r * bx[0],
+            p[1] - r * bx[1],
+            p[2] - r * bx[2],
+        ];
+
+        let opd_plus = xyz_to_opl(&r_plus, &p, q0, lambda) - opl_center;
+        let opd_minus = xyz_to_opl(&r_minus, &p, q0, lambda) - opl_center;
+
+        // OPD should be approximately symmetric (both positive, similar magnitude)
+        // The old bug caused one side to have a huge linear term
+        let ratio = opd_plus / opd_minus;
+        assert!(
+            (ratio - 1.0).abs() < 0.1,
+            "OPD should be approximately symmetric: opd_plus={}, opd_minus={}, ratio={}",
+            opd_plus, opd_minus, ratio
+        );
+
+        // Both should be positive (longer path than on-axis)
+        assert!(opd_plus > 0.0, "opd_plus should be positive: {}", opd_plus);
+        assert!(opd_minus > 0.0, "opd_minus should be positive: {}", opd_minus);
+    }
+
+    #[test]
+    fn test_xyz_to_opl_infinite_conjugate_backward_compat() {
+        // With q0 >> |p|, the new point-based formula should give
+        // results very close to the old plane-based formula.
+        let lambda = 0.0135;
+        let p = [0.0, 0.0, 100.0];
+        let q0 = 100000.0; // quasi-infinite conjugate
+
+        // Reference at center
+        let opl_center = xyz_to_opl(&p, &p, q0, lambda);
+
+        // Test point offset from center
+        let r_o = [1.0, 0.0, 100.0];
+        let opd = xyz_to_opl(&r_o, &p, q0, lambda) - opl_center;
+
+        // For infinite conjugate, OPD ≈ r^2 / (2*f*lambda) where f ≈ p_norm
+        // r = 1 um, f ≈ 100 um -> OPD ≈ 1 / (200 * 0.0135) ≈ 0.37 waves
+        assert!(
+            opd > 0.3 && opd < 0.5,
+            "OPD for infinite conjugate should be ~0.37 waves, got {}",
+            opd
+        );
     }
 }
